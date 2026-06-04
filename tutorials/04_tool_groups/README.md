@@ -60,12 +60,56 @@ group = ToolGroup(
 
 ### reset_tools 元工具
 
-当 Toolkit 中存在非 basic 工具组时，系统自动注册 `reset_tools` 元工具。Agent 可以调用它来切换工具组：
+`reset_tools` 是 Toolkit 在你注册了非 basic 工具组时**自动注入**的一个元工具。LLM 通过调用它来切换自己当前激活的工具组——这是"agent 自管理工具集"的实现机制。
 
-- 每次调用表示**最终期望状态**（不是增量修改）
-- 未设为 `True` 的组会被停用
-- 激活时返回该组的 `instructions`
-- `basic` 组不受影响
+**它和 basic 工具的区别**
+
+| | basic 工具 | reset_tools |
+|---|---|---|
+| 出现在 schema 里 | 总是 | 仅当存在至少一个非 basic 组时 |
+| 归属哪个组 | `"basic"` 组 | **不属于任何组**（在 Toolkit 里单独占一个 `builtin_meta_tool` 槽） |
+| 受组的激活状态影响 | basic 永远激活 | 不受影响——一旦被注入就一直可见 |
+| 权限检查 | 跟普通工具一样走 PermissionEngine | 内置硬编码 `ALLOW`，用户规则改不掉 |
+
+> 所以严格说"`reset_tools` 是不是 basic 工具" 的答案是**不是**——它和 basic 是并列的"始终可用"层，但走的是不同的注册路径。
+
+**动态生成的 input schema**
+
+`reset_tools` 没有静态 schema——它在每次调 `get_tool_schemas()` 时，根据当前 Toolkit 里的非 basic 组**动态生成**：每个组变成一个 `bool` 字段，字段 description 用的就是 `ToolGroup(description=...)`。所以 LLM 看到的是这样：
+
+```json
+{
+  "name": "reset_tools",
+  "parameters": {
+    "data_io":       {"type": "boolean", "default": false, "description": "数据读写..."},
+    "analysis":      {"type": "boolean", "default": false, "description": "统计分析..."},
+    "visualization": {"type": "boolean", "default": false, "description": "图表生成..."}
+  }
+}
+```
+
+**调用语义**
+
+- 每次调用 = **最终期望状态**（覆盖式，不是增量）。源码里第一步就是 `activated_groups.clear()`，然后把传 `True` 的组加进去
+- 没显式传 `True` 的组都会被关掉——LLM 想保留某组必须每次都列上
+- `basic` 组不出现在 schema 里，永远激活，关不掉
+- 工具返回值是激活组的 `instructions` 文本（来自 `ToolGroup(instructions=...)`），LLM 收到后才知道这组该怎么用
+
+**调用一次的完整流程**
+
+```
+LLM 决定要做可视化：
+  reset_tools({"visualization": True})
+      ↓
+  ResetTools.__call__:
+    1. activated_groups.clear()
+    2. activated_groups = ["visualization"]
+    3. 返回 visualization 组的 instructions 给 LLM
+      ↓
+  下一轮 LLM 看到的 toolkit schema：
+    basic + reset_tools + visualization 组的工具
+    （data_io / analysis 已经从 schema 里消失）
+```
 
 ### 设计原则
 
