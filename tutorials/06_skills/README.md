@@ -9,11 +9,10 @@
 
 ## 你将学到
 
-- Skill 的本质：Markdown 指令集，不是工具
-- `SKILL.md` 的结构：frontmatter 元数据 + 详细指令
-- `LocalSkillLoader`：从目录加载技能
-- `SkillViewer` 工具：Agent 如何读取和使用技能
-- Skill 与 ToolGroup 的组合使用
+- Skill 是什么、不是什么
+- 如何编写 `SKILL.md`
+- 如何把 Skill 注册到 Toolkit
+- Agent 运行时如何发现和使用 Skill
 
 ## 前置要求
 
@@ -22,32 +21,36 @@
 
 ## 核心概念
 
-### Skill 不是工具
+### Skill — 是什么
 
-这是理解 Skill 的关键——**Skill 不是工具**。工具有 Schema、可以被 LLM 直接调用；Skill 是一组 Markdown 格式的指令，告诉 Agent *如何组合使用现有工具*来完成特定任务。
+**一组 Markdown 格式的操作指南**，告诉 Agent 如何组合现有工具完成特定任务。
+
+Skill **不是**工具——工具有 Schema、可以被 LLM 直接调用；Skill 是写给 Agent 看的"操作手册"，Agent 读完后用已有的工具（Bash、Read、Write 等）去执行。
 
 ```
 工具 = 原子操作（读文件、执行命令、查询数据）
-技能 = 操作指南（如何组合工具来生成图表、写报告）
+Skill = 操作指南（如何组合工具来生成图表、写报告）
 ```
 
-Agent 通过 `SkillViewer` 工具读取 Skill 的内容，然后按照指令用已有的工具去执行。
+**什么时候用：** 你发现某类任务需要固定的多步骤套路（采样 → 选图表类型 → matplotlib 画图 → 保存），想把这套流程沉淀下来复用，而不是每次都靠模型自己摸索。
 
-### SKILL.md 结构
+### SKILL.md — 怎么写
 
-每个 Skill 是一个目录，其中包含一个 `SKILL.md` 文件：
+这一设计参考了 [Claude Code 的 Skill 规范](https://docs.anthropic.com/en/docs/claude-code/skills)。每个 Skill 是一个**目录**，包含必需的 `SKILL.md` 和可选的资源文件（脚本、参考文档、模板等）：
 
 ```
 skills/
 ├── chart_generator/
-│   └── SKILL.md
+│   ├── SKILL.md              # 必需：frontmatter 元数据 + Markdown 指令
+│   └── scripts/              # 可选：可复用脚本
+│       └── plot.py
 └── report_writer/
     ├── SKILL.md
-    └── templates/
+    └── assets/                # 可选：模板、参考文档等资源
         └── report_template.md
 ```
 
-`SKILL.md` 使用 frontmatter 定义元数据：
+`SKILL.md` = YAML frontmatter（元数据） + Markdown 正文（操作指令）：
 
 ```markdown
 ---
@@ -55,77 +58,63 @@ name: chart_generator
 description: Generate charts using matplotlib. Supports bar, line, pie.
 ---
 
-# Chart Generator Skill
+# Chart Generator
 
-详细的使用指令...
+## 使用流程
+
+1. 读取用户提供的数据文件
+2. 根据数据特征选择图表类型
+3. 使用 `scripts/plot.py` 生成图表
+4. 保存到用户指定的输出路径
 ```
 
 | 字段 | 必填 | 说明 |
 |------|------|------|
 | `name` | 是 | 技能名称，Agent 通过此名称引用 |
-| `description` | 是 | 技能描述，展示在系统提示中帮助 Agent 判断何时使用 |
+| `description` | 是 | 技能描述，帮助 Agent 判断何时使用该技能 |
 
-frontmatter 之后的 Markdown 内容是完整的使用指令，只有当 Agent 调用 `SkillViewer` 工具时才会被加载。
+### 注册与使用
 
-### LocalSkillLoader
+写好 SKILL.md 后，通过 Toolkit 的 `skills_or_loaders` 参数注册（Toolkit 的基本用法见 T03）。
 
-`LocalSkillLoader` 从本地目录加载 Skill：
+`skills_or_loaders` 接受三种类型的值，适用于不同场景：
 
 ```python
 from agentscope.skill import LocalSkillLoader
 
-# 加载单个 Skill 目录
-loader = LocalSkillLoader(directory="skills/chart_generator")
-
-# 扫描子目录，加载所有 Skill
-loader = LocalSkillLoader(directory="skills", scan_subdir=True)
-```
-
-| 参数 | 说明 |
-|------|------|
-| `directory` | Skill 目录路径 |
-| `scan_subdir` | 是否扫描子目录（默认 `False`） |
-
-### SkillViewer 工具
-
-当 Toolkit 中注册了 Skill 时，系统自动添加 `SkillViewer` 工具（对 Agent 显示为 `Skill`）。Agent 可以调用它来读取技能的完整指令：
-
-```
-Agent 看到系统提示中列出的技能摘要
-  ↓
-决定使用某个技能
-  ↓
-调用 SkillViewer("chart_generator") 读取完整指令
-  ↓
-按照指令使用 Bash/Read/Write 等工具执行
-```
-
-系统提示中只包含技能的名称和描述（节省 context），完整指令通过工具调用按需加载。
-
-### Skill 与 ToolGroup
-
-Skill 可以放在任何 ToolGroup 中，随组一起激活/停用：
-
-```python
-Toolkit(
+toolkit = Toolkit(
     tools=[Read(), Bash()],
     skills_or_loaders=[
-        LocalSkillLoader("skills/common", scan_subdir=True),
-    ],
-    tool_groups=[
-        ToolGroup(
-            name="visualization",
-            description="Chart and visualization tools",
-            skills_or_loaders=[
-                LocalSkillLoader("skills/chart_generator"),
-            ],
-        ),
+        # 方式 1：字符串路径 — 直接指向某个 Skill 目录
+        # 适用于：加载单个已知的 Skill
+        "skills/chart_generator",
+
+        # 方式 2：LocalSkillLoader — 扫描目录下的所有子目录
+        # 适用于：批量加载一个目录下的多个 Skill
+        LocalSkillLoader("skills", scan_subdir=True),
+
+        # 方式 3：Skill 对象 — 直接传入已构造的 Skill 实例
+        # 适用于：程序化构建 Skill（如从数据库或远程加载）
+        Skill(name="...", description="...", dir="...", markdown="..."),
     ],
 )
 ```
 
-- `tools=` / `skills_or_loaders=` 中的技能归入 `basic` 组（始终可用）
-- `ToolGroup.skills_or_loaders` 中的技能随组激活/停用
+注册后，系统自动添加 `SkillViewer` 工具。Agent 运行时的流程：
+
+```
+系统提示中列出所有技能的 name + description（占用极少上下文）
+  ↓
+Agent 根据用户请求，判断需要使用某个技能
+  ↓
+调用 SkillViewer("chart_generator") 读取完整的 Markdown 指令
+  ↓
+按照指令使用 Bash/Read/Write 等工具执行
+```
+
+这就是**渐进式加载**——20 个 Skill 的元数据只占很少的上下文空间，完整指令只在需要时才加载。
+
+> Skill 也可以放进 ToolGroup 随组激活/停用，详见 T04。
 
 ## 示例：给 DataMuse 添加技能
 
