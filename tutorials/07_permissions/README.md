@@ -131,6 +131,30 @@ context = PermissionContext(
 )
 ```
 
+### 将权限配置装入 Agent
+
+`PermissionContext` 本身只是一份配置——它需要通过 `AgentState` 传入 `Agent` 构造函数才能生效：
+
+```python
+from agentscope.agent import Agent
+from agentscope.state import AgentState
+
+agent = Agent(
+    name="DataMuse",
+    system_prompt="...",
+    model=model,
+    toolkit=toolkit,
+    # ← 权限在这里注入：通过 state 参数
+    state=AgentState(permission_context=context),
+)
+```
+
+关键点：
+
+- **`state=AgentState(permission_context=...)`** 是唯一的注入点。不传 `state` 参数时，Agent 使用默认 `AgentState()`，其中 `permission_context` 的模式为 `DEFAULT`（所有操作 ASK）。
+- `PermissionContext` 对象在 Agent 生命周期内可以**运行时修改**——例如 `agent.state.permission_context.mode = PermissionMode.BYPASS` 可以在调试时临时放开限制。
+- 同一个 `PermissionContext` 实例可以**跨多个 Agent 共享**（如果你想让一组 Agent 共用同一套规则），也可以每个 Agent 独立配置。
+
 ## 示例：为 DataMuse 配置不同权限级别
 
 本期通过四个示例展示权限系统的工作方式：
