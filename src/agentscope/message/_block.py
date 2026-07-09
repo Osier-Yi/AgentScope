@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """The content blocks of messages."""
-import uuid
 from enum import StrEnum
-from typing import Literal, List, TypeAlias
+from typing import Literal, List, TypeAlias, Any
 from pydantic import BaseModel, Field, AnyUrl, field_serializer, ConfigDict
 
-from agentscope.permission import PermissionRule
+from .._utils._common import _generate_id
+from ..permission import PermissionRule
 
 
 class TextBlock(BaseModel):
@@ -15,7 +15,7 @@ class TextBlock(BaseModel):
     """The type of the text block, which is always 'text'."""
     text: str
     """The text content of the block."""
-    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    id: str = Field(default_factory=_generate_id)
     """The unique identifier of the block."""
 
 
@@ -33,21 +33,7 @@ class ThinkingBlock(BaseModel):
     """The type of the thinking block, which is always 'thinking'."""
     thinking: str
     """The thinking content of the block."""
-    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
-    """The unique identifier of the block."""
-
-
-class HintBlock(BaseModel):
-    """A block used to provide instructions or hints to the LLM during the
-    reasoning-acting loop. When passed to the LLM API, the hint block is
-    converted into a user message.
-    """
-
-    type: Literal["hint"] = "hint"
-    """The type of the hint block, which is always 'hint'."""
-    hint: str
-    """The hint content of the block."""
-    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    id: str = Field(default_factory=_generate_id)
     """The unique identifier of the block."""
 
 
@@ -83,13 +69,36 @@ class DataBlock(BaseModel):
 
     type: Literal["data"] = "data"
     """The type of the data block, which is always 'data'."""
-    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    id: str = Field(default_factory=_generate_id)
     """The unique identifier of the block."""
     source: Base64Source | URLSource
     """The source of the data, which can be either a base64-encoded string or
     a URL."""
     name: str | None = None
     """The name of the data block, which is optional."""
+
+
+class HintBlock(BaseModel):
+    """A block used to provide instructions or hints to the LLM during the
+    reasoning-acting loop. When passed to the LLM API, the hint block is
+    converted into a user message.
+
+    The ``hint`` field can be a plain string (text-only) or a list of
+    :class:`TextBlock` / :class:`DataBlock` for multimodal content
+    (e.g. a background tool result containing both text and an image).
+    """
+
+    type: Literal["hint"] = "hint"
+    """The type of the hint block, which is always 'hint'."""
+    hint: str | list[TextBlock | DataBlock]
+    """The hint content — plain text or a list of content blocks for
+    multimodal data."""
+    id: str = Field(default_factory=_generate_id)
+    """The unique identifier of the block."""
+    source: str | None = None
+    """The sender or origin of this hint. For team messages this is the
+    sender's display name (e.g. ``"alice"``); for system notifications
+    it may be ``"system"`` or ``None``."""
 
 
 class ToolCallState(StrEnum):
@@ -103,13 +112,9 @@ class ToolCallState(StrEnum):
 
 
 class ToolCallBlock(BaseModel):
-    """The tool call block.
+    """The tool call block."""
 
-    Allows extra provider-specific fields (e.g. the OpenAI Responses API's
-    ``call_id``) via ``extra="allow"`` without requiring subclassing.
-    """
-
-    model_config = ConfigDict(use_enum_values=True, extra="allow")
+    model_config = ConfigDict(use_enum_values=True)
 
     type: Literal["tool_call"] = "tool_call"
     """The type of the tool call block, which is always 'tool_call'."""
@@ -175,6 +180,8 @@ class ToolResultBlock(BaseModel):
     text and multimodal blocks."""
     state: ToolResultState = ToolResultState.RUNNING
     """The execution state of the tool."""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    """The metadata of the tool result block."""
 
 
 ContentBlock: TypeAlias = (

@@ -43,7 +43,6 @@ dependencies = [
     "aiofiles",
     "tree_sitter",
     "tree_sitter_bash",
-    "ripgrep",
     "jsonschema",
 ]
 
@@ -69,16 +68,60 @@ storage = [
     "redis",
 ]
 # ------------ Workspace -----------
+k8s = ["kubernetes-asyncio"]
 workspace = [
     "aiodocker",
     "e2b",
+    "agentscope[k8s]",
 ]
+# ------------ Tools ------------
+tools = [
+    "ripgrep",
+]
+# ------------ RAG ------------
+rag = [
+    "qdrant-client",
+    "pypdf",
+    "python-pptx",
+]
+milvuslite = [
+    "pymilvus[milvus-lite]>=2.4.0",
+    "milvus-lite>=3.0; sys_platform == 'win32'",
+]
+# ------------ MongoDB vector store ------------
+mongodb = [
+    "pymongo>=4.7",
+]
+
+# ------------ S3-compatible blob store ------------
+s3 = [
+    "aioboto3",
+]
+
+# ------------ Long-term memory ------------
+# Required by `agentscope.middleware._longterm_memory.Mem0Middleware`.
+# Pinned to mem0 v2.x because the middleware targets that
+# architecture: ADDITIVE_EXTRACTION_PROMPT + AGENT_CONTEXT_SUFFIX
+# (replaced v1's USER/AGENT_MEMORY_EXTRACTION_PROMPT split) and the
+# v3 phased pipeline in `_add_to_vector_store`. Running on mem0 1.x
+# wouldn't crash but the 2-tier add fallback degenerates into a
+# wasted LLM call.
+mem0 = ["mem0ai>=2.0.0"]
+# Required by `agentscope.middleware._longterm_memory.ReMeMiddleware`.
+reme = ["reme-ai>=0.4.0.6"]
 # ------------ Full ------------
 full = [
     "agentscope[models]",
     "agentscope[service]",
     "agentscope[storage]",
     "agentscope[workspace]",
+    "agentscope[tools]",
+    "agentscope[rag]",
+    "agentscope[milvuslite]",
+    "agentscope[mongodb]",
+    "agentscope[s3]",
+    "agentscope[mem0]",
+    "agentscope[reme]",
 ]
 
 # ------------ Development ------------
@@ -92,6 +135,14 @@ dev = [
     "myst_parser",
     "matplotlib",
     "fakeredis",
+    # S3-backend testing — moto[server] spins up an in-process S3, the
+    # store-under-test (`S3BlobStore`) uses aioboto3, and boto3 is the
+    # sync client the test fixtures use to seed/verify buckets.
+    "moto[server,s3]",
+    "aioboto3",
+    "boto3",
+    # RAG parser tests — used to generate PDF fixtures in-memory
+    "reportlab",
 ]
 
 [project.urls]
@@ -107,12 +158,15 @@ include-package-data = true
 # ``"*"`` applies to every discovered package. Patterns:
 # - ``py.typed`` marks the typed package per PEP 561.
 # - ``_models/*.yaml`` reaches into the data-only ``_models/``
-#   subdirs that ship with each model provider (they have no
+#  subdirs that ship with each model provider (they have no
 #   ``__init__.py`` and are not packages, but the files still
 #   live alongside the parent package's source on disk).
-"*" = ["py.typed", "_models/*.yaml"]
+"*" = [
+    "py.typed",
+    "_models/*.yaml",
+    "_cosyvoice_models/*.yaml",
+]
 "agentscope.workspace._docker" = ["Dockerfile*.template"]
-
 [build-system]
 requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"

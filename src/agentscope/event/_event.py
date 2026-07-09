@@ -1,13 +1,20 @@
 # -*- coding: utf-8 -*-
 """Event types for agent execution."""
-import uuid
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal, List, TypeAlias
+from typing import Any, Dict, Literal, List, TypeAlias
 
 from pydantic import BaseModel, Field, ConfigDict
 
-from ..message import ToolCallBlock, ToolResultBlock, ToolResultState
+from .._utils._common import _generate_id
+from ..message import (
+    DataBlock,
+    TextBlock,
+    ToolCallBlock,
+    ToolResultBlock,
+    ToolResultState,
+)
+from ..model import FinishedReason
 from ..permission import PermissionRule
 
 
@@ -32,6 +39,8 @@ class EventType(StrEnum):
     THINKING_BLOCK_DELTA = "THINKING_BLOCK_DELTA"
     THINKING_BLOCK_END = "THINKING_BLOCK_END"
 
+    HINT_BLOCK = "HINT_BLOCK"
+
     TOOL_CALL_START = "TOOL_CALL_START"
     TOOL_CALL_DELTA = "TOOL_CALL_DELTA"
     TOOL_CALL_END = "TOOL_CALL_END"
@@ -47,7 +56,10 @@ class EventType(StrEnum):
     REQUIRE_EXTERNAL_EXECUTION = "REQUIRE_EXTERNAL_EXECUTION"
 
     USER_CONFIRM_RESULT = "USER_CONFIRM_RESULT"
+    USER_INTERRUPT = "USER_INTERRUPT"
     EXTERNAL_EXECUTION_RESULT = "EXTERNAL_EXECUTION_RESULT"
+
+    CUSTOM = "CUSTOM"
 
 
 class EventBase(BaseModel):
@@ -55,10 +67,12 @@ class EventBase(BaseModel):
 
     model_config = ConfigDict(use_enum_values=True)
 
-    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    id: str = Field(default_factory=_generate_id)
     """Unique event identifier."""
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     """ISO 8601 timestamp of when the event was created."""
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    """Optional metadata attached to the event."""
 
 
 class ReplyStartEvent(EventBase):
@@ -76,6 +90,14 @@ class ReplyStartEvent(EventBase):
     """Role of the agent."""
 
 
+class ReplyEndReason(StrEnum):
+    """The reason for reply ended."""
+
+    COMPLETED = "completed"
+    INTERRUPTED = "interrupted"
+    EXCEED_MAX_ITERS = "exceed_max_iters"
+
+
 class ReplyEndEvent(EventBase):
     """Reply end event."""
 
@@ -85,6 +107,8 @@ class ReplyEndEvent(EventBase):
     """ID of the session this reply belongs to."""
     reply_id: str
     """ID of the reply message produced by this reply."""
+    finished_reason: ReplyEndReason = ReplyEndReason.COMPLETED
+    """The finished reason of this reply."""
 
 
 class ModelCallStartEvent(EventBase):
@@ -109,6 +133,10 @@ class ModelCallEndEvent(EventBase):
     """Number of input tokens consumed."""
     output_tokens: int
     """Number of output tokens generated."""
+    finished_reason: FinishedReason = Field(
+        default=FinishedReason.COMPLETED,
+    )
+    """The finished reason of this model call."""
 
 
 class TextBlockStartEvent(EventBase):
@@ -224,6 +252,31 @@ class ThinkingBlockEndEvent(EventBase):
     """Unique identifier of the thinking block."""
 
 
+class HintBlockEvent(EventBase):
+    """One-shot hint block event.
+
+    Unlike text/thinking blocks, hint blocks are not streamed — the
+    full content is available at creation time (team messages,
+    background tool results, user interruptions, …). A single event
+    carries the complete :class:`~agentscope.message.HintBlock`.
+
+    The ``hint`` field mirrors :attr:`HintBlock.hint` and may be a
+    plain string or a list of :class:`TextBlock` / :class:`DataBlock`
+    for multimodal content.
+    """
+
+    type: Literal[EventType.HINT_BLOCK] = EventType.HINT_BLOCK
+    """Event type."""
+    reply_id: str
+    """ID of the reply message this block belongs to."""
+    block_id: str
+    """Unique identifier of the hint block."""
+    source: str | None = None
+    """Sender or origin of this hint (e.g. ``"alice"``, ``"system"``)."""
+    hint: str | List[TextBlock | DataBlock]
+    """Complete hint content — ``str`` or ``list[TextBlock | DataBlock]``."""
+
+
 class ToolCallStartEvent(EventBase):
     """Tool call start event."""
 
@@ -300,7 +353,7 @@ class ToolResultDataDeltaEvent(EventBase):
     """ID of the reply message this tool result belongs to."""
     tool_call_id: str
     """ID of the corresponding tool call."""
-    block_id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    block_id: str = Field(default_factory=_generate_id)
     """Unique identifier of the data block created by this event."""
     media_type: str
     """MIME type of the binary content."""
@@ -323,6 +376,8 @@ class ToolResultEndEvent(EventBase):
     """ID of the corresponding tool call."""
     state: ToolResultState
     """Final execution state of the tool call."""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    """Optional metadata attached to the tool result event."""
 
 
 class ExceedMaxItersEvent(EventBase):
@@ -389,6 +444,31 @@ class UserConfirmResultEvent(EventBase):
     """Confirmation results for each pending tool call."""
 
 
+class UserInterruptEvent(EventBase):
+    """User-initiated interrupt targeting a parked reply.
+
+    Delivered to :meth:`Agent.reply_stream` (or :meth:`Agent.reply`) to
+    abort a reply that is currently waiting on external input — either
+    user confirmation (:class:`RequireUserConfirmEvent`) or external
+    execution (:class:`RequireExternalExecutionEvent`).
+
+    On receipt, the agent closes every pending tool call with an
+    interrupted tool result, emits a fallback assistant message, ends
+    the reply with :attr:`ReplyEndReason.INTERRUPTED`, and does **not**
+    enter the reasoning-acting loop.
+
+    .. note:: This event is only meaningful for parked replies. To
+        interrupt a running (actively-generating) reply, cancel the
+        underlying task instead — the agent handles that path via its
+        own ``CancelledError`` cleanup.
+    """
+
+    type: Literal[EventType.USER_INTERRUPT] = EventType.USER_INTERRUPT
+    """Event type."""
+    reply_id: str
+    """ID of the reply message this interrupt targets."""
+
+
 class ExternalExecutionResultEvent(EventBase):
     """External execution result event."""
 
@@ -400,6 +480,40 @@ class ExternalExecutionResultEvent(EventBase):
     """ID of the reply message associated with this run."""
     execution_results: List[ToolResultBlock]
     """Results returned by the external executor."""
+
+
+class CustomEvent(EventBase):
+    """Generic extensible event for signals that don't fit a specific
+    ``AgentEvent`` subtype.
+
+    Used by service-layer middleware to notify front-end subscribers
+    about state changes (task progress, team membership, permission
+    updates, …) without polluting the core agent event enum with
+    application-specific types.
+
+    Front-end implementations should handle unknown ``name`` values
+    gracefully — skip with no error.
+
+    Attributes:
+        name (`str`):
+            Identifies the kind of notification. Well-known values:
+
+            - ``"state_updated"`` — agent state (tasks / permission)
+              changed during a tool call.
+            - ``"team_updated"`` — team membership changed (member
+              added / team created or dissolved).
+
+        value (`dict`):
+            Arbitrary JSON-serializable payload whose schema depends
+            on ``name``. May be empty.
+    """
+
+    type: Literal[EventType.CUSTOM] = EventType.CUSTOM
+    """Event type discriminator."""
+    name: str
+    """Kind of notification — see class docstring for well-known values."""
+    value: dict = Field(default_factory=dict)
+    """Arbitrary payload."""
 
 
 AgentEvent: TypeAlias = (
@@ -419,6 +533,7 @@ AgentEvent: TypeAlias = (
     | ThinkingBlockStartEvent
     | ThinkingBlockDeltaEvent
     | ThinkingBlockEndEvent
+    | HintBlockEvent
     | ToolCallStartEvent
     | ToolCallDeltaEvent
     | ToolCallEndEvent
@@ -427,5 +542,7 @@ AgentEvent: TypeAlias = (
     | ToolResultDataDeltaEvent
     | ToolResultEndEvent
     | UserConfirmResultEvent
+    | UserInterruptEvent
     | ExternalExecutionResultEvent
+    | CustomEvent
 )

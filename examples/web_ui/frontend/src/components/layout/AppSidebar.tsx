@@ -1,4 +1,12 @@
-import { BotMessageSquare, Calendars, Compass, KeyRound, Languages, Settings } from 'lucide-react';
+import {
+	BotMessageSquare,
+	Calendars,
+	Compass,
+	KeyRound,
+	Languages,
+	LibraryBig,
+	Settings,
+} from 'lucide-react';
 import { useOnborda } from 'onborda';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -25,11 +33,11 @@ export function AppSidebar() {
 	const { startOnborda } = useOnborda();
 
 	const handleStartTour = () => {
-		if (location.pathname !== '/') {
+		if (!location.pathname.startsWith('/chat')) {
 			// Page not mounted yet — leave a flag, navigate, and let the
 			// ChatTourController auto-trigger after ChatPage mounts.
 			sessionStorage.setItem('force_tour', '1');
-			navigate('/');
+			navigate('/chat');
 		} else {
 			startOnborda(CHAT_TOUR_NAME);
 		}
@@ -54,8 +62,11 @@ export function AppSidebar() {
 							<SidebarMenuItem key={'chat'}>
 								<SidebarMenuButton
 									tooltip={{ children: t('common.chat'), hidden: false }}
-									isActive={location.pathname === '/'}
-									onClick={() => navigate('/')}
+									isActive={
+										location.pathname === '/chat' ||
+										location.pathname.startsWith('/chat/')
+									}
+									onClick={() => navigate('/chat')}
 									className="px-2.5 md:px-2"
 								>
 									<BotMessageSquare />
@@ -85,6 +96,16 @@ export function AppSidebar() {
 									className="px-2"
 								>
 									<KeyRound />
+								</SidebarMenuButton>
+							</SidebarMenuItem>
+							<SidebarMenuItem>
+								<SidebarMenuButton
+									tooltip={{ children: t('common.knowledge'), hidden: false }}
+									isActive={location.pathname === '/knowledge'}
+									onClick={() => navigate('/knowledge')}
+									className="px-2"
+								>
+									<LibraryBig />
 								</SidebarMenuButton>
 							</SidebarMenuItem>
 						</SidebarMenu>

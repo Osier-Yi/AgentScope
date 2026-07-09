@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """The message class in agentscope."""
-import uuid
+import base64
 from datetime import datetime
 from typing import Literal, List, overload, Sequence, Self, TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field, model_validator
 
+from .._utils._common import _generate_id
 from ._block import (
     TextBlock,
     ThinkingBlock,
@@ -72,7 +73,7 @@ class Msg(BaseModel):
     """The message content as a list of content blocks."""
     role: Literal["user", "assistant", "system"]
     """The role of the sender."""
-    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    id: str = Field(default_factory=_generate_id)
     """The message identifier."""
     metadata: dict = Field(default_factory=dict)
     """The metadata of the message"""
@@ -283,7 +284,18 @@ class Msg(BaseModel):
                         event.block_id,
                     )
                 elif event.data:
-                    block.source.data += event.data
+                    # Each delta is an independently base64-encoded chunk
+                    # (with its own padding); naive string concat would
+                    # corrupt the byte stream. Decode, concat bytes, re-encode.
+                    existing = (
+                        base64.b64decode(block.source.data)
+                        if block.source.data
+                        else b""
+                    )
+                    incoming = base64.b64decode(event.data)
+                    block.source.data = base64.b64encode(
+                        existing + incoming,
+                    ).decode("ascii")
 
             case EventType.DATA_BLOCK_END:
                 pass
@@ -305,6 +317,18 @@ class Msg(BaseModel):
 
             case EventType.THINKING_BLOCK_END:
                 pass
+
+            case EventType.HINT_BLOCK:
+                # One-shot event — the full HintBlock content arrives in
+                # a single event, so just append it to ``content`` for
+                # persistence and replay.
+                self.content.append(
+                    HintBlock(
+                        id=event.block_id,
+                        source=event.source,
+                        hint=event.hint,
+                    ),
+                )
 
             case EventType.TOOL_CALL_START:
                 self.content.append(
@@ -392,6 +416,15 @@ class Msg(BaseModel):
                 else:
                     assert isinstance(block, ToolResultBlock)
                     block.state = event.state
+                    block.metadata = event.metadata
+                # The paired ToolCallBlock's lifecycle ends with its
+                # result — flip it to FINISHED here so the SSE-rebuilt
+                # reply_msg matches ``agent.state.context``, which
+                # ``_update_tool_call_state`` mutates directly.
+                call_block = self._find_block("tool_call", event.tool_call_id)
+                if call_block is not None:
+                    assert isinstance(call_block, ToolCallBlock)
+                    call_block.state = ToolCallState.FINISHED
 
             case EventType.REQUIRE_USER_CONFIRM:
                 for tool_call in event.tool_calls:
@@ -406,7 +439,10 @@ class Msg(BaseModel):
             case EventType.USER_CONFIRM_RESULT:
                 for result in event.confirm_results:
                     b = self._find_block("tool_call", result.tool_call.id)
-                    if b is not None:
+                    # Only ASKING calls can transition; skip stale results
+                    # (e.g. arriving after an interrupt already resolved the
+                    # tool call).
+                    if b is not None and b.state == ToolCallState.ASKING:
                         assert isinstance(b, ToolCallBlock)
                         b.state = (
                             ToolCallState.ALLOWED
@@ -422,7 +458,16 @@ class Msg(BaseModel):
                         b.state = ToolCallState.SUBMITTED
 
             case EventType.EXTERNAL_EXECUTION_RESULT:
+                # Skip results whose tool_call already has a tool_result
+                # (e.g. late arrival after an interrupt).
+                existing_ids = {
+                    b.id
+                    for b in self.content
+                    if isinstance(b, ToolResultBlock)
+                }
                 for result in event.execution_results:
+                    if result.id in existing_ids:
+                        continue
                     self.content.append(result)
 
         return self
@@ -472,7 +517,7 @@ def UserMsg(
         metadata=metadata or {},
         created_at=created_at,
         finished_at=finished_at,
-        id=id or uuid.uuid4().hex,
+        id=id or _generate_id(),
     )
 
 
@@ -520,7 +565,7 @@ def AssistantMsg(
         metadata=metadata or {},
         created_at=created_at or datetime.now().isoformat(),
         finished_at=finished_at,
-        id=id or uuid.uuid4().hex,
+        id=id or _generate_id(),
         usage=usage,
     )
 
@@ -569,5 +614,5 @@ def SystemMsg(
         metadata=metadata or {},
         created_at=created_at,
         finished_at=finished_at,
-        id=id or uuid.uuid4().hex,
+        id=id or _generate_id(),
     )

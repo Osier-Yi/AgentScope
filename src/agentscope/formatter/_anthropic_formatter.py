@@ -2,7 +2,6 @@
 """The Anthropic formatter module."""
 import base64
 import fnmatch
-import json
 from abc import ABC
 from typing import Any
 
@@ -11,6 +10,7 @@ from pydantic import Field
 
 from ._formatter_base import FormatterBase
 from .._logging import logger
+from .._utils._common import _json_loads_with_repair
 from ..message import (
     Msg,
     TextBlock,
@@ -28,6 +28,7 @@ class _AnthropicFormatterBase(FormatterBase, ABC):
     """Mixin for formatting Anthropic formatters to avoid duplication between
     AnthropicChatFormatter and AnthropicMultiAgentFormatter."""
 
+    # pylint: disable=too-many-branches
     async def _format_messages(
         self,
         msgs: list[Msg],
@@ -105,14 +106,32 @@ class _AnthropicFormatterBase(FormatterBase, ABC):
                         content_blocks = []
                         has_tool_result = False
 
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": block.hint},
-                            ],
-                        },
-                    )
+                    if isinstance(block.hint, str):
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": block.hint},
+                                ],
+                            },
+                        )
+                    else:
+                        hint_parts: list[dict] = []
+                        for sub in block.hint:
+                            if isinstance(sub, TextBlock):
+                                hint_parts.append(
+                                    {"type": "text", "text": sub.text},
+                                )
+                            elif isinstance(sub, DataBlock):
+                                formatted_sub = (
+                                    self._format_anthropic_data_block(sub)
+                                )
+                                if formatted_sub:
+                                    hint_parts.append(formatted_sub)
+                        if hint_parts:
+                            messages.append(
+                                {"role": "user", "content": hint_parts},
+                            )
 
                 elif isinstance(block, DataBlock):
                     formatted_block = self._format_anthropic_data_block(block)
@@ -126,13 +145,25 @@ class _AnthropicFormatterBase(FormatterBase, ABC):
                             "id": block.id,
                             "name": block.name,
                             # Anthropic API expects input as a dict, not a
-                            # JSON string.
-                            "input": json.loads(block.input or "{}"),
+                            # JSON string. Use the repair helper so a
+                            # truncated input (from interrupted streaming or
+                            # context compression) degrades to {} instead of
+                            # raising JSONDecodeError.
+                            "input": _json_loads_with_repair(
+                                block.input or "{}",
+                            ),
                         },
                     )
 
                 elif isinstance(block, ToolResultBlock):
-                    if content_blocks:
+                    # Only flush when we have non-tool-result content
+                    # (i.e. the preceding assistant turn). Once
+                    # `has_tool_result` is True we are already accumulating
+                    # tool_results into the current user message, so we must
+                    # NOT flush on each additional ToolResultBlock — doing so
+                    # would split parallel results into separate user messages
+                    # which strict endpoints (e.g. DeepSeek) reject with 400.
+                    if content_blocks and not has_tool_result:
                         role = "user" if has_tool_result else msg.role
                         messages.append(
                             {"role": role, "content": content_blocks},

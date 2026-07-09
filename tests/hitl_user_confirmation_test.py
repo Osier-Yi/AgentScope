@@ -196,6 +196,7 @@ class AgentUserConfirmationTest(IsolatedAsyncioTestCase):
                 "type": "MODEL_CALL_END",
                 "input_tokens": 0,
                 "output_tokens": 0,
+                "finished_reason": "completed",
             },
         ]
 
@@ -219,6 +220,7 @@ class AgentUserConfirmationTest(IsolatedAsyncioTestCase):
         return {
             "id": AnyString(),
             "created_at": AnyString(),
+            "metadata": {},
             "reply_id": reply_id,
         }
 
@@ -306,6 +308,7 @@ class AgentUserConfirmationTest(IsolatedAsyncioTestCase):
                 "type": "MODEL_CALL_END",
                 "input_tokens": 0,
                 "output_tokens": 0,
+                "finished_reason": "completed",
             },
             {
                 "type": "REQUIRE_USER_CONFIRM",
@@ -403,7 +406,11 @@ class AgentUserConfirmationTest(IsolatedAsyncioTestCase):
                 self.sequential_result_1,
             ),
             *self.final_text_events,
-            {"type": "REPLY_END", "session_id": session_id},
+            {
+                "type": "REPLY_END",
+                "session_id": session_id,
+                "finished_reason": "completed",
+            },
         ]
 
         self.assertListEqual(
@@ -454,6 +461,7 @@ class AgentUserConfirmationTest(IsolatedAsyncioTestCase):
                             },
                         ],
                         "state": "success",
+                        "metadata": {},
                     },
                     {
                         "type": "text",
@@ -564,6 +572,7 @@ class AgentUserConfirmationTest(IsolatedAsyncioTestCase):
                 "type": "MODEL_CALL_END",
                 "input_tokens": 0,
                 "output_tokens": 0,
+                "finished_reason": "completed",
             },
             {
                 "type": "REQUIRE_USER_CONFIRM",
@@ -722,7 +731,11 @@ class AgentUserConfirmationTest(IsolatedAsyncioTestCase):
                 self.sequential_result_2,
             ),
             *self.final_text_events,
-            {"type": "REPLY_END", "session_id": session_id},
+            {
+                "type": "REPLY_END",
+                "session_id": session_id,
+                "finished_reason": "completed",
+            },
         ]
         self.assertListEqual(
             events,
@@ -787,6 +800,7 @@ class AgentUserConfirmationTest(IsolatedAsyncioTestCase):
                             },
                         ],
                         "state": "success",
+                        "metadata": {},
                     },
                     {
                         "type": "tool_result",
@@ -800,6 +814,7 @@ class AgentUserConfirmationTest(IsolatedAsyncioTestCase):
                             },
                         ],
                         "state": "success",
+                        "metadata": {},
                     },
                     {
                         "type": "text",
@@ -908,6 +923,7 @@ class AgentUserConfirmationTest(IsolatedAsyncioTestCase):
                 "type": "MODEL_CALL_END",
                 "input_tokens": 0,
                 "output_tokens": 0,
+                "finished_reason": "completed",
             },
             {
                 "type": "REQUIRE_USER_CONFIRM",
@@ -1072,7 +1088,11 @@ class AgentUserConfirmationTest(IsolatedAsyncioTestCase):
                 self.concurrent_result_2,
             ),
             *self.final_text_events,
-            {"type": "REPLY_END", "session_id": session_id},
+            {
+                "type": "REPLY_END",
+                "session_id": session_id,
+                "finished_reason": "completed",
+            },
         ]
         self.assertListEqual(
             events,
@@ -1137,6 +1157,7 @@ class AgentUserConfirmationTest(IsolatedAsyncioTestCase):
                             },
                         ],
                         "state": "success",
+                        "metadata": {},
                     },
                     {
                         "type": "tool_result",
@@ -1150,6 +1171,7 @@ class AgentUserConfirmationTest(IsolatedAsyncioTestCase):
                             },
                         ],
                         "state": "success",
+                        "metadata": {},
                     },
                     {
                         "type": "text",
@@ -1256,6 +1278,7 @@ class AgentUserConfirmationTest(IsolatedAsyncioTestCase):
                 "type": "MODEL_CALL_END",
                 "input_tokens": 0,
                 "output_tokens": 0,
+                "finished_reason": "completed",
             },
             {
                 "type": "REQUIRE_USER_CONFIRM",
@@ -1417,7 +1440,11 @@ class AgentUserConfirmationTest(IsolatedAsyncioTestCase):
 
         expected_final_events = [
             *self.final_text_events,
-            {"type": "REPLY_END", "session_id": session_id},
+            {
+                "type": "REPLY_END",
+                "session_id": session_id,
+                "finished_reason": "completed",
+            },
         ]
         self.assertListEqual(
             final_events,

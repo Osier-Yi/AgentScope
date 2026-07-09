@@ -35,6 +35,7 @@ from agentscope.event import (
     ExternalExecutionResultEvent,
     ModelCallEndEvent,
     ReplyEndEvent,
+    ReplyEndReason,
     RequireExternalExecutionEvent,
     RequireUserConfirmEvent,
     TextBlockDeltaEvent,
@@ -58,6 +59,7 @@ from agentscope.message import (
     ToolResultBlock,
     ToolResultState,
 )
+from agentscope.model import FinishedReason
 
 # ---------------------------------------------------------------------------
 # Fixed IDs used throughout – hard-coded so ground-truth dicts are readable.
@@ -135,6 +137,7 @@ def _trb(tc_id: str, name: str, output: Any, state: str) -> dict:
         "name": name,
         "output": output,
         "state": state,
+        "metadata": {},
     }
 
 
@@ -263,31 +266,35 @@ class EventToMessageTest(IsolatedAsyncioTestCase):
             ],
         )
 
+        # Each delta carries an independently base64-encoded chunk (with its
+        # own padding); ``append_event`` decodes -> concats bytes -> re-encodes
+        # so the message reflects the concatenated underlying bytes, not a
+        # string-concat of the chunks. Here: b"abc" + b"def" -> "YWJjZGVm".
         ev_data_delta1 = DataBlockDeltaEvent(
             reply_id=_REPLY_ID,
             block_id=_B_DATA,
-            data="abc",
+            data="YWJj",  # base64(b"abc")
             media_type="image/png",
         )
         gt_data_delta1 = _base(
             [
                 _tb(_B_TEXT, "Hello World"),
                 _thb(_B_THINK, "Let me think"),
-                _db_b64(_B_DATA, "abc", "image/png"),
+                _db_b64(_B_DATA, "YWJj", "image/png"),
             ],
         )
 
         ev_data_delta2 = DataBlockDeltaEvent(
             reply_id=_REPLY_ID,
             block_id=_B_DATA,
-            data="def",
+            data="ZGVm",  # base64(b"def")
             media_type="image/png",
         )
         gt_data_delta2 = _base(
             [
                 _tb(_B_TEXT, "Hello World"),
                 _thb(_B_THINK, "Let me think"),
-                _db_b64(_B_DATA, "abcdef", "image/png"),
+                _db_b64(_B_DATA, "YWJjZGVm", "image/png"),
             ],
         )
 
@@ -296,7 +303,7 @@ class EventToMessageTest(IsolatedAsyncioTestCase):
             [  # unchanged
                 _tb(_B_TEXT, "Hello World"),
                 _thb(_B_THINK, "Let me think"),
-                _db_b64(_B_DATA, "abcdef", "image/png"),
+                _db_b64(_B_DATA, "YWJjZGVm", "image/png"),
             ],
         )
 
@@ -312,7 +319,7 @@ class EventToMessageTest(IsolatedAsyncioTestCase):
         _s4_prefix = [
             _tb(_B_TEXT, "Hello World"),
             _thb(_B_THINK, "Let me think"),
-            _db_b64(_B_DATA, "abcdef", "image/png"),
+            _db_b64(_B_DATA, "YWJjZGVm", "image/png"),
         ]
         gt_tc_allow_start = _base(
             _s4_prefix + [_tcb(_TC_ALLOW, "search", "", "pending")],
@@ -429,8 +436,14 @@ class EventToMessageTest(IsolatedAsyncioTestCase):
             tool_call_id=_TC_ALLOW,
             state=ToolResultState.SUCCESS,
         )
+        # TOOL_RESULT_END flips the paired ToolCallBlock to FINISHED, so the
+        # tool_call state in the prefix changes from "allowed" to "finished"
+        # from this point onward.
+        _s4b_done_prefix = _s4_prefix + [
+            _tcb(_TC_ALLOW, "search", '{"q": "hi"}', "finished"),
+        ]
         gt_result_end_ok = _base(
-            _s4b_prefix
+            _s4b_done_prefix
             + [
                 _trb(
                     _TC_ALLOW,
@@ -450,7 +463,7 @@ class EventToMessageTest(IsolatedAsyncioTestCase):
         # ================================================================
         # Stage 5 – ToolCall (TC_DENY): stream → confirm → denied (finished)
         # ================================================================
-        _s5_prefix = _s4b_prefix + [
+        _s5_prefix = _s4b_done_prefix + [
             _trb(
                 _TC_ALLOW,
                 "search",
@@ -636,8 +649,12 @@ class EventToMessageTest(IsolatedAsyncioTestCase):
             tool_call_id=_TC_IMG,
             state=ToolResultState.ERROR,
         )
+        # TOOL_RESULT_END flips the paired ToolCallBlock to FINISHED.
+        _s7b_done_prefix = _s7_prefix + [
+            _tcb(_TC_IMG, "screenshot", "", "finished"),
+        ]
         gt_res_img_end = _base(
-            _s7b_prefix
+            _s7b_done_prefix
             + [
                 _trb(
                     _TC_IMG,
@@ -659,7 +676,7 @@ class EventToMessageTest(IsolatedAsyncioTestCase):
         # Stage 8 – ModelCallEndEvent (first call: usage initialized;
         #          second call: usage accumulated)
         # ================================================================
-        _final_content = _s7b_prefix + [
+        _final_content = _s7b_done_prefix + [
             _trb(
                 _TC_IMG,
                 "screenshot",
@@ -678,6 +695,7 @@ class EventToMessageTest(IsolatedAsyncioTestCase):
             reply_id=_REPLY_ID,
             input_tokens=10,
             output_tokens=20,
+            finished_reason=FinishedReason.COMPLETED,
         )
         gt_model_call_end_1 = _base(
             _final_content,
@@ -688,6 +706,7 @@ class EventToMessageTest(IsolatedAsyncioTestCase):
             reply_id=_REPLY_ID,
             input_tokens=5,
             output_tokens=8,
+            finished_reason=FinishedReason.COMPLETED,
         )
         gt_model_call_end_2 = _base(
             _final_content,
@@ -701,6 +720,7 @@ class EventToMessageTest(IsolatedAsyncioTestCase):
             reply_id=_REPLY_ID,
             session_id=_SESSION_ID,
             created_at=_FIXED_END_TS,
+            finished_reason=ReplyEndReason.COMPLETED,
         )
         gt_reply_end = _base(
             _final_content,

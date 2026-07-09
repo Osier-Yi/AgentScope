@@ -2,6 +2,7 @@
 """Adapters to convert functions and MCP tools to ToolProtocol."""
 import inspect
 import json
+import re
 from contextlib import _AsyncGeneratorContextManager
 from datetime import timedelta
 from typing import Callable, Any, AsyncGenerator, Generator
@@ -10,7 +11,7 @@ from mcp import ClientSession
 import mcp
 
 from ._types import Function
-from ._base import ToolBase
+from ._base import ToolBase, ToolMiddlewareBase
 from ..permission import (
     PermissionBehavior,
     PermissionDecision,
@@ -53,6 +54,7 @@ class FunctionTool(ToolBase):
         is_concurrency_safe: bool = True,
         is_read_only: bool = False,
         is_state_injected: bool = False,
+        middlewares: list[ToolMiddlewareBase] | None = None,
     ) -> None:
         """Initialize the FunctionTool.
 
@@ -69,7 +71,10 @@ class FunctionTool(ToolBase):
                 Whether this tool only reads data without side effects.
             is_state_injected (`bool`, optional):
                 Whether this tool requires agent state injection.
+            middlewares (`list[ToolMiddlewareBase] | None`, optional):
+                Tool middlewares wrapping the tool execution.
         """
+        super().__init__(middlewares=middlewares)
         self.name = name or func.__name__
         self.description = description or _extract_func_description(
             func.__doc__ or "",
@@ -101,7 +106,7 @@ class FunctionTool(ToolBase):
             "by the user.",
         )
 
-    async def __call__(
+    async def call(
         self,
         **kwargs: Any,
     ) -> ToolChunk | AsyncGenerator[ToolChunk, None]:
@@ -180,6 +185,7 @@ class MCPTool(ToolBase):
         | None = None,
         session: Any | None = None,
         timeout: float | None = None,
+        middlewares: list[ToolMiddlewareBase] | None = None,
     ) -> None:
         """Initialize the MCPTool.
 
@@ -197,9 +203,27 @@ class MCPTool(ToolBase):
                 Either this or ``client_gen`` must be provided.
             timeout (`float | None`, optional):
                 The timeout in seconds for tool execution.
+            middlewares (`list[ToolMiddlewareBase] | None`, optional):
+                Tool middlewares wrapping the tool execution.
         """
+        super().__init__(middlewares=middlewares)
         self.mcp_name = mcp_name
-        self.name = f"mcp__{self.mcp_name}__{tool.name}"
+
+        # LLM providers enforce ^[a-zA-Z0-9_-]+$ on tool names.
+        # mcp_name is validated in MCPClient.model_post_init;
+        # tool.name comes from the MCP server and may contain dots,
+        # colons, etc. — replace illegal chars with "x" (not "_")
+        # to avoid collisions with the "__" separator.
+        # self._tool.name retains the original for server-side calls.
+        sanitized_tool = re.sub(r"[^a-zA-Z0-9_-]", "x", tool.name)
+        self.name = f"mcp__{mcp_name}__{sanitized_tool}"
+        if sanitized_tool != tool.name:
+            logger.debug(
+                "MCP tool name sanitized: '%s' -> '%s'.",
+                tool.name,
+                self.name,
+            )
+
         self.description = tool.description or ""
 
         # Preserve the full inputSchema (including $defs, anyOf, oneOf, etc.)
@@ -262,7 +286,7 @@ class MCPTool(ToolBase):
             message="MCP tools must be explicitly allowed by the user.",
         )
 
-    async def __call__(
+    async def call(
         self,
         **kwargs: Any,
     ) -> ToolChunk:

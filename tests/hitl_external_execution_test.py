@@ -146,6 +146,7 @@ class AgentExternalExecutionTest(IsolatedAsyncioTestCase):
                 "type": "MODEL_CALL_END",
                 "input_tokens": 0,
                 "output_tokens": 0,
+                "finished_reason": "completed",
             },
         ]
         self.final_mock_responses = [
@@ -170,6 +171,7 @@ class AgentExternalExecutionTest(IsolatedAsyncioTestCase):
         return {
             "id": AnyString(),
             "created_at": AnyString(),
+            "metadata": {},
             "reply_id": reply_id,
         }
 
@@ -333,6 +335,7 @@ class AgentExternalExecutionTest(IsolatedAsyncioTestCase):
                 "type": "MODEL_CALL_END",
                 "input_tokens": 0,
                 "output_tokens": 0,
+                "finished_reason": "completed",
             },
             *self._get_require_external_execution_events(
                 reply_id,
@@ -409,7 +412,11 @@ class AgentExternalExecutionTest(IsolatedAsyncioTestCase):
                 self.sequential_result_1,
             ),
             *self.final_text_events,
-            {"type": "REPLY_END", "session_id": session_id},
+            {
+                "type": "REPLY_END",
+                "session_id": session_id,
+                "finished_reason": "completed",
+            },
         ]
         self.assertListEqual(
             events,
@@ -452,6 +459,7 @@ class AgentExternalExecutionTest(IsolatedAsyncioTestCase):
                             },
                         ],
                         "state": "success",
+                        "metadata": {},
                     },
                     {
                         "type": "text",
@@ -561,6 +569,7 @@ class AgentExternalExecutionTest(IsolatedAsyncioTestCase):
                 "type": "MODEL_CALL_END",
                 "input_tokens": 0,
                 "output_tokens": 0,
+                "finished_reason": "completed",
             },
             *self._get_require_external_execution_events(
                 reply_id,
@@ -685,7 +694,11 @@ class AgentExternalExecutionTest(IsolatedAsyncioTestCase):
                 state="error",
             ),
             *self.final_text_events,
-            {"type": "REPLY_END", "session_id": session_id},
+            {
+                "type": "REPLY_END",
+                "session_id": session_id,
+                "finished_reason": "completed",
+            },
         ]
 
         self.assertListEqual(
@@ -737,6 +750,7 @@ class AgentExternalExecutionTest(IsolatedAsyncioTestCase):
                             },
                         ],
                         "state": "success",
+                        "metadata": {},
                     },
                     {
                         "type": "tool_result",
@@ -750,6 +764,7 @@ class AgentExternalExecutionTest(IsolatedAsyncioTestCase):
                             },
                         ],
                         "state": "error",
+                        "metadata": {},
                     },
                     {
                         "type": "text",
@@ -859,6 +874,7 @@ class AgentExternalExecutionTest(IsolatedAsyncioTestCase):
                 "type": "MODEL_CALL_END",
                 "input_tokens": 0,
                 "output_tokens": 0,
+                "finished_reason": "completed",
             },
             *self._get_require_external_execution_events(
                 reply_id,
@@ -984,6 +1000,7 @@ class AgentExternalExecutionTest(IsolatedAsyncioTestCase):
             {
                 "type": "REPLY_END",
                 "session_id": session_id,
+                "finished_reason": "completed",
             },
         ]
 
@@ -1036,6 +1053,7 @@ class AgentExternalExecutionTest(IsolatedAsyncioTestCase):
                             },
                         ],
                         "state": "success",
+                        "metadata": {},
                     },
                     {
                         "type": "tool_result",
@@ -1049,6 +1067,7 @@ class AgentExternalExecutionTest(IsolatedAsyncioTestCase):
                             },
                         ],
                         "state": "success",
+                        "metadata": {},
                     },
                     {
                         "type": "text",
@@ -1156,6 +1175,7 @@ class AgentExternalExecutionTest(IsolatedAsyncioTestCase):
                 "type": "MODEL_CALL_END",
                 "input_tokens": 0,
                 "output_tokens": 0,
+                "finished_reason": "completed",
             },
             *self._get_require_external_execution_events(
                 reply_id,
@@ -1254,6 +1274,7 @@ class AgentExternalExecutionTest(IsolatedAsyncioTestCase):
             {
                 "type": "REPLY_END",
                 "session_id": session_id,
+                "finished_reason": "completed",
             },
         ]
         self.assertListEqual(
@@ -1304,6 +1325,7 @@ class AgentExternalExecutionTest(IsolatedAsyncioTestCase):
                             },
                         ],
                         "state": "success",
+                        "metadata": {},
                     },
                     {
                         "type": "tool_result",
@@ -1317,6 +1339,7 @@ class AgentExternalExecutionTest(IsolatedAsyncioTestCase):
                             },
                         ],
                         "state": "success",
+                        "metadata": {},
                     },
                     {
                         "type": "text",

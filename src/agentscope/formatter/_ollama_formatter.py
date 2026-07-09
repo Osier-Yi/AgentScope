@@ -2,7 +2,6 @@
 """The Ollama formatter module."""
 import base64
 import fnmatch
-import json
 from abc import ABC
 from typing import Any
 
@@ -11,6 +10,7 @@ from pydantic import Field
 
 from ._formatter_base import FormatterBase
 from .._logging import logger
+from .._utils._common import _json_loads_with_repair
 from ..message import (
     Msg,
     TextBlock,
@@ -150,9 +150,30 @@ class OllamaChatFormatter(_OllamaFormatterBase):
                         content_parts = []
                         images = []
 
-                    messages.append(
-                        {"role": "user", "content": block.hint},
-                    )
+                    if isinstance(block.hint, str):
+                        messages.append(
+                            {"role": "user", "content": block.hint},
+                        )
+                    else:
+                        hint_text_parts: list[str] = []
+                        hint_images: list[str] = []
+                        for sub in block.hint:
+                            if isinstance(sub, TextBlock):
+                                hint_text_parts.append(sub.text)
+                            elif isinstance(sub, DataBlock):
+                                formatted_sub = self._format_ollama_data_block(
+                                    sub,
+                                )
+                                if formatted_sub:
+                                    hint_images.append(formatted_sub)
+                        if hint_text_parts or hint_images:
+                            hint_msg: dict[str, Any] = {
+                                "role": "user",
+                                "content": "\n".join(hint_text_parts),
+                            }
+                            if hint_images:
+                                hint_msg["images"] = hint_images
+                            messages.append(hint_msg)
 
                 elif isinstance(block, DataBlock):
                     formatted_image = self._format_ollama_data_block(block)
@@ -176,8 +197,12 @@ class OllamaChatFormatter(_OllamaFormatterBase):
                                     "function": {
                                         "name": block.name,
                                         # Ollama SDK expects a dict, not a
-                                        # JSON string.
-                                        "arguments": json.loads(
+                                        # JSON string. Use the repair helper
+                                        # so a truncated input (from
+                                        # interrupted streaming or context
+                                        # compression) degrades to {} instead
+                                        # of raising JSONDecodeError.
+                                        "arguments": _json_loads_with_repair(
                                             block.input or "{}",
                                         ),
                                     },
@@ -207,9 +232,15 @@ class OllamaChatFormatter(_OllamaFormatterBase):
 
                     # Ollama expects tool results as a separate "tool" role
                     # message, regardless of the containing Msg's role.
+                    # Per the Ollama tool-calling spec, the "tool" message
+                    # must carry a "tool_name" field (not the OpenAI-style
+                    # "tool_call_id") so the model can correlate the result
+                    # with the function that produced it — see
+                    # https://docs.ollama.com/capabilities/tool-calling
                     messages.append(
                         {
                             "role": "tool",
+                            "tool_name": block.name,
                             "content": textual_output,
                         },
                     )
