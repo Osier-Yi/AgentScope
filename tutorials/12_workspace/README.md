@@ -16,7 +16,7 @@
 - Workspace 如何自动注入内置工具（Bash、Read、Write、Edit、Glob、Grep）
 - Workspace 作为 Offloader：上下文和工具结果的持久化
 - MCP 和 Skill 的动态管理：`add_mcp` / `remove_mcp`、`add_skill` / `remove_skill`
-- Docker / E2B Workspace 的对比（概念介绍）
+- Docker / E2B / K8s Workspace 的对比（概念介绍）
 - Workspace 在 Agent Service 中的角色
 
 ## 前置要求
@@ -114,10 +114,20 @@ workspace/
 | 实现 | 隔离级别 | 适用场景 |
 |------|----------|----------|
 | `LocalWorkspace` | 目录级别 | 本地开发、教程、单用户 |
-| `DockerWorkspace` | 容器级别 | 线上部署、多租户隔离 |
+| `DockerWorkspace` | 容器级别 | 单机服务、多租户隔离 |
 | `E2BWorkspace` | 云沙箱 | SaaS 场景、完全隔离 |
+| `K8sWorkspace` | Pod / PVC 级别 | 已有 Kubernetes 集群，需要按 Session 管理 Pod 生命周期 |
 
-本教程聚焦 `LocalWorkspace`，Docker 和 E2B 的使用方式相同（只是构造参数不同）。
+本教程聚焦 `LocalWorkspace`。Docker、E2B、K8s 的使用方式相同：在 Agent Service 里换成对应的 `WorkspaceManager`，由它负责为每个 Session 分配工作空间。
+
+```python
+from agentscope.app.workspace_manager import (
+    LocalWorkspaceManager,
+    DockerWorkspaceManager,
+    E2BWorkspaceManager,
+    K8sWorkspaceManager,
+)
+```
 
 ## 示例
 
@@ -135,7 +145,7 @@ python main.py
 - 用 `add_mcp()` 在运行时动态添加一个 MCP server
 - 观察 `sessions/` 目录下的 offload 文件内容
 - 自定义 `instructions` 参数，改变 Agent 对 Workspace 的理解
-- 对比 `LocalWorkspace` 和 `DockerWorkspace` 的行为差异
+- 对比 `LocalWorkspace`、`DockerWorkspace` 和 `K8sWorkspace` 的隔离差异
 
 ## 下一期预告
 

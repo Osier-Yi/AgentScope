@@ -91,7 +91,7 @@ class SalesProfile(ToolBase):
             message="SalesProfile is read-only.",
         )
 
-    async def __call__(self) -> ToolChunk:
+    async def call(self) -> ToolChunk:
         rows = _load_rows()
         columns = list(rows[0].keys()) if rows else []
         missing = {
@@ -150,7 +150,7 @@ class SalesBreakdown(ToolBase):
             message="SalesBreakdown is read-only.",
         )
 
-    async def __call__(self, group_by: str) -> ToolChunk:
+    async def call(self, group_by: str) -> ToolChunk:
         rows = _load_rows()
         allowed = {"category", "region", "payment_method", "customer_tier"}
         if group_by not in allowed:
@@ -231,7 +231,7 @@ class ReportWriter(ToolBase):
             message="ReportWriter writes a file into the workspace.",
         )
 
-    async def __call__(
+    async def call(
         self,
         title: str,
         markdown: str,

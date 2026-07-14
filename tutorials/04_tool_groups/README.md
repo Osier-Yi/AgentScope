@@ -101,7 +101,7 @@ group = ToolGroup(
 LLM 决定要做可视化：
   reset_tools({"visualization": True})
       ↓
-  ResetTools.__call__:
+  ResetTools.call:
     1. activated_groups.clear()
     2. activated_groups = ["visualization"]
     3. 返回 visualization 组的 instructions 给 LLM

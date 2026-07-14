@@ -116,7 +116,7 @@ async for event in agent.reply_stream(event):
 
 ### External Tool（外部工具）
 
-当 `ToolBase.is_external_tool = True` 时，Agent 不会执行 `__call__`，而是 yield `RequireExternalExecutionEvent`，等待外部系统提供执行结果：
+当 `ToolBase.is_external_tool = True` 时，Agent 不会执行工具的 `call()`，而是 yield `RequireExternalExecutionEvent`，等待外部系统提供执行结果：
 
 ```python
 class ExternalExecutionResultEvent:

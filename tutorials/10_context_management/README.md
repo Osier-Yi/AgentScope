@@ -14,7 +14,7 @@
 - `ContextConfig` 的三个关键参数
 - 自动压缩流程：分割 → 摘要 → 保留近期
 - 工具结果截断：超长结果自动裁剪
-- `compress_context()` 手动触发压缩
+- `compress_context()` 手动触发压缩，并用 `instructions` 给压缩器提示
 
 ## 前置要求
 
@@ -37,14 +37,14 @@ Agent 在多轮对话 + 大量工具调用后，上下文会迅速膨胀：
 
 ```python
 from agentscope.agent import Agent
-from agentscope.agent._config import ContextConfig
+from agentscope.agent import ContextConfig
 
 agent = Agent(
     ...,
     context_config=ContextConfig(
         trigger_ratio=0.8,       # 触发压缩的阈值（占最大上下文比例）
         reserve_ratio=0.1,       # 压缩后保留的最近消息比例
-        tool_result_limit=3000,  # 单个工具结果的最大 token 数
+        tool_result_limit=50000, # 单个工具结果的最大 token 数
     ),
 )
 ```
@@ -53,7 +53,7 @@ agent = Agent(
 |------|--------|------|
 | `trigger_ratio` | 0.8 | 当 token 数超过 `context_size × trigger_ratio` 时触发压缩 |
 | `reserve_ratio` | 0.1 | 压缩后保留最近的消息（占总上下文的比例） |
-| `tool_result_limit` | 3000 | 单个工具结果超过此 token 数时自动截断 |
+| `tool_result_limit` | 50000 | 单个工具结果超过此 token 数时自动截断 |
 
 ### 自动压缩流程
 
@@ -84,6 +84,8 @@ Agent 准备新一轮推理
 ### 手动压缩
 
 ```python
+from agentscope.message import HintBlock
+
 # 使用默认配置压缩
 await agent.compress_context()
 
@@ -93,7 +95,16 @@ custom_config = ContextConfig(
     reserve_ratio=0.2,    # 保留更多近期消息
 )
 await agent.compress_context(context_config=custom_config)
+
+# 给压缩器额外提示：哪些业务细节必须保留
+await agent.compress_context(
+    instructions=HintBlock(
+        hint="Preserve the user's preferred report format and KPI formulas.",
+    ),
+)
 ```
+
+`instructions` 不会改变 Agent 的长期系统提示，只会影响这一次压缩摘要的取舍。比如 DataMuse 已经和用户约定了"日报必须包含 GMV、订单数、客单价"，就可以在手动压缩时把这个约定钉住。
 
 ### Offloader 协议
 
@@ -133,6 +144,7 @@ python main.py
 - 降低 `tool_result_limit`，观察大工具结果的截断行为
 - 进行 20+ 轮对话，触发自动压缩
 - 自定义 `compression_prompt` 和 `summary_template`
+- 写一个 Middleware 实现 `on_compress_context`，在压缩前自动补充业务保留规则
 
 ## 下一期预告
 

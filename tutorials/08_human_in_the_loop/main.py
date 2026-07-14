@@ -97,7 +97,7 @@ class SendReport(ToolBase):
             message="External tool, permission handled externally.",
         )
 
-    async def __call__(self, **kwargs: Any) -> ToolChunk:
+    async def call(self, **kwargs: Any) -> ToolChunk:
         raise RuntimeError("External tools should not be called directly.")
 
 
@@ -199,7 +199,7 @@ async def handle_user_confirm(
                     f"({rule.behavior.value})",
                 )
 
-        # Auto-confirm for this tutorial (in production, ask the user)
+        # Auto-confirm for this tutorial (in a real app, ask the user)
         print("  → [Auto-confirming for tutorial demo]")
         confirmed = True
 

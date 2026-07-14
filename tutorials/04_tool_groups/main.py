@@ -121,7 +121,7 @@ class SalesSummary(ToolBase):
             message="Read-only analytics, always allowed.",
         )
 
-    async def __call__(self, group_by: str = "") -> ToolChunk:
+    async def call(self, group_by: str = "") -> ToolChunk:
         rows = []
         with open(SALES_CSV, "r", encoding="utf-8") as f:
             for row in csv.DictReader(f):
@@ -193,7 +193,7 @@ class GenerateChart(ToolBase):
             message="Chart generation allowed.",
         )
 
-    async def __call__(
+    async def call(
         self,
         chart_type: str,
         group_by: str,

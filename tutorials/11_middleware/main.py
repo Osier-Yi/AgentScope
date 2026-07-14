@@ -4,6 +4,7 @@
 This tutorial demonstrates:
 - Creating custom middleware with MiddlewareBase
 - Onion pattern hooks (on_reply, on_reasoning, on_acting, on_model_call)
+- Compression hook (on_compress_context)
 - Transformer pattern hook (on_system_prompt)
 - Middleware execution order
 - TracingMiddleware for OpenTelemetry integration
@@ -20,7 +21,7 @@ from typing import Any, AsyncGenerator, Awaitable, Callable
 from agentscope.agent import Agent
 from agentscope.credential import DashScopeCredential
 from agentscope.event import EventType
-from agentscope.message import UserMsg, TextBlock
+from agentscope.message import UserMsg, TextBlock, HintBlock
 from agentscope.middleware import MiddlewareBase
 from agentscope.model import DashScopeChatModel
 from agentscope.permission import (
@@ -103,7 +104,7 @@ class SalesSummary(ToolBase):
             message="Read-only analytics, always allowed.",
         )
 
-    async def __call__(self, group_by: str = "") -> ToolChunk:
+    async def call(self, group_by: str = "") -> ToolChunk:
         rows = []
         with open(SALES_CSV, "r", encoding="utf-8") as f:
             for row in csv.DictReader(f):
@@ -217,6 +218,25 @@ class DynamicPromptMiddleware(MiddlewareBase):
             + f"\n\nCurrent time: {now}"
             + f"\nData source: {SALES_CSV}"
         )
+
+
+class CompressionHintMiddleware(MiddlewareBase):
+    """Adds a preservation hint whenever context compression is requested."""
+
+    async def on_compress_context(
+        self,
+        agent: Agent,
+        input_kwargs: dict,
+        next_handler: Callable[..., Awaitable[None]],
+    ) -> None:
+        hint = input_kwargs.get("instructions") or HintBlock(
+            hint=(
+                "Preserve DataMuse's KPI definitions, report format, "
+                "and any user-specific reporting preferences."
+            ),
+        )
+        print(f"  [COMPRESS] Adding preservation hint for '{agent.name}'")
+        await next_handler(**{**input_kwargs, "instructions": hint})
 
 
 # =========================================================================
@@ -360,18 +380,49 @@ async def example_dynamic_prompt(model) -> None:
 
 
 # =========================================================================
-# Example 4: Middleware architecture
+# Example 4: Compression hook
+# =========================================================================
+async def example_compression_hook(model) -> None:
+    """Show how middleware can intercept manual context compression."""
+    print("\n" + "=" * 60)
+    print("Example 4: Compression Hook (on_compress_context)")
+    print("=" * 60)
+
+    agent = Agent(
+        name="DataMuse",
+        system_prompt="You are DataMuse, a sales-data analyst.",
+        model=model,
+        toolkit=Toolkit(tools=[]),
+        middlewares=[CompressionHintMiddleware()],
+    )
+    await agent.observe(
+        UserMsg(
+            name="user",
+            content=(
+                "For future reports, preserve the KPI definitions and "
+                "keep summaries in bullet form."
+            ),
+        ),
+    )
+    await agent.compress_context()
+    print("  [COMPRESS] compress_context() completed")
+
+
+# =========================================================================
+# Example 5: Middleware architecture
 # =========================================================================
 async def example_architecture() -> None:
     """Display the middleware architecture."""
     print("\n" + "=" * 60)
-    print("Example 4: Middleware Architecture")
+    print("Example 5: Middleware Architecture")
     print("=" * 60)
 
     print(
         """
-  Onion Model (on_reply / on_reasoning / on_acting / on_model_call):
-  ──────────────────────────────────────────────────────────────────
+  Onion Model:
+  ────────────
+  on_reply / on_reasoning / on_acting / on_model_call
+  on_compress_context
 
   middlewares = [A, B, C]
 
@@ -412,6 +463,18 @@ async def example_architecture() -> None:
   # Transformer hook (returns string):
   async def on_system_prompt(self, agent, current_prompt):
       return current_prompt + "\\nExtra info"
+
+  # Compression hook (returns None):
+  async def on_compress_context(self, agent, input_kwargs, next_handler):
+      await next_handler(**input_kwargs)
+
+  Optional tool discovery:
+  ───────────────────────
+  async def list_tools(self):
+      return [SomeTool()]
+
+  In library mode, add those tools to Toolkit yourself.
+  In Agent Service, the toolkit assembly step collects middleware tools.
 """,
     )
 
@@ -438,6 +501,7 @@ async def main() -> None:
     await example_onion_middlewares(model)
     await example_cost_tracking(model)
     await example_dynamic_prompt(model)
+    await example_compression_hook(model)
     await example_architecture()
 
     print("\n" + "=" * 60)

@@ -5,7 +5,7 @@ Runs against the FastAPI service started by `python main.py` in another
 terminal. Walks the canonical 5-step flow:
 
     POST /credential/   →  POST /agent/   →  POST /sessions/
-        →  POST /chat/   (SSE stream)
+        →  GET /sessions/{id}/stream + POST /chat/
         →  GET  /sessions/{id}/messages
 
 Prerequisites:
@@ -16,10 +16,12 @@ Notes
 -----
 The service-side Agent template only stores ``name`` + ``system_prompt`` +
 optional ``context_config`` / ``react_config``. **Custom Python tools cannot
-be attached over HTTP** — they have to be injected through the workspace
-(see main.py's ``LocalWorkspaceManager(skill_paths=...)``). What survives
-the HTTP boundary is the DataMuse persona and the built-in Bash / Read /
-Write / Edit / Glob / Grep tools every workspace ships with.
+be attached through the Agent-create HTTP payload**. They can be provided by
+the service host through ``extra_agent_tools`` or by the workspace
+(``default_mcps`` / ``skill_paths``). In this tutorial the DataMuse persona
+survives the HTTP boundary, ``SalesProfile`` / ``SalesBreakdown`` come from
+``extra_agent_tools``, and the report_writer skill comes from
+``LocalWorkspaceManager(skill_paths=...)`` in ``main.py``.
 """
 # pylint: disable=missing-function-docstring
 import asyncio
@@ -88,10 +90,10 @@ async def step_2_create_agent(client: httpx.AsyncClient) -> str:
         "name": "DataMuse",
         "system_prompt": (
             "You are DataMuse, a sales-data analyst.\n"
-            "Sales data lives at ../data/sales_data.csv relative to your "
-            "workspace. Use Bash + Read to inspect it, then summarize the "
-            "headline numbers. If asked to write a report, use the "
-            "report_writer skill that has been installed in the workspace."
+            "Use SalesProfile to inspect the server-side sales dataset and "
+            "SalesBreakdown for grouped analysis. Do not guess figures. "
+            "If asked to write a report, use the report_writer skill that "
+            "has been installed in the workspace."
         ),
     }
     resp = await client.post("/agent/", json=body, headers=HEADERS)
@@ -142,18 +144,29 @@ async def step_4_chat(
     }
     print(f"\n[4] streaming reply for: {prompt!r}")
     print("-" * 60)
+
+    stream_url = f"/sessions/{session_id}/stream"
     async with client.stream(
-        "POST",
-        "/chat/",
-        json=body,
+        "GET",
+        stream_url,
+        params={"agent_id": agent_id},
         headers=HEADERS,
         timeout=httpx.Timeout(60.0, read=None),
     ) as resp:
         resp.raise_for_status()
+
+        trigger_resp = await client.post(
+            "/chat/",
+            json=body,
+            headers=HEADERS,
+        )
+        trigger_resp.raise_for_status()
+        print(f"  >> chat run {trigger_resp.json()['status']}")
+
         async for line in resp.aiter_lines():
             if not line.startswith("data:"):
                 continue
-            payload = line[len("data:") :].strip()
+            payload = line[len("data:") :].strip()  # noqa: E203
             if not payload or payload == "[DONE]":
                 continue
             event = json.loads(payload)
@@ -172,6 +185,7 @@ async def step_4_chat(
                 )
             elif etype == "REPLY_END":
                 print()
+                break
     print("-" * 60)
 
 
@@ -219,8 +233,8 @@ async def main() -> None:
             client,
             agent_id,
             session_id,
-            "List the columns in ../data/sales_data.csv and tell me the "
-            "row count. Use Bash or Read — don't guess.",
+            "Use SalesProfile to list the dataset columns and row count, "
+            "then use SalesBreakdown to summarize revenue by category.",
         )
         await step_5_list_messages(client, agent_id, session_id)
 

@@ -80,7 +80,9 @@ description: Generate charts using matplotlib. Supports bar, line, pie.
 `skills_or_loaders` 接受三种类型的值，适用于不同场景：
 
 ```python
-from agentscope.skill import LocalSkillLoader
+import time
+
+from agentscope.skill import LocalSkillLoader, Skill
 
 toolkit = Toolkit(
     tools=[Read(), Bash()],
@@ -95,19 +97,25 @@ toolkit = Toolkit(
 
         # 方式 3：Skill 对象 — 直接传入已构造的 Skill 实例
         # 适用于：程序化构建 Skill（如从数据库或远程加载）
-        Skill(name="...", description="...", dir="...", markdown="..."),
+        Skill(
+            name="...",
+            description="...",
+            dir="...",
+            markdown="...",
+            updated_at=time.time(),
+        ),
     ],
 )
 ```
 
-注册后，系统自动添加 `SkillViewer` 工具。Agent 运行时的流程：
+当当前可用工具组中存在 Skill 时，系统会暴露名为 `Skill` 的只读工具（Python 实现类叫 `SkillViewer`）。Agent 运行时的流程：
 
 ```
 系统提示中列出所有技能的 name + description（占用极少上下文）
   ↓
 Agent 根据用户请求，判断需要使用某个技能
   ↓
-调用 SkillViewer("chart_generator") 读取完整的 Markdown 指令
+调用 Skill(skill="chart_generator") 读取完整的 Markdown 指令
   ↓
 按照指令使用 Bash/Read/Write 等工具执行
 ```
@@ -123,7 +131,7 @@ Agent 根据用户请求，判断需要使用某个技能
 1. **chart_generator** — 指导 Agent 用 matplotlib 生成图表
 2. **report_writer** — 指导 Agent 生成结构化的 Markdown 分析报告
 
-Agent 在收到相关任务时，先通过 SkillViewer 读取技能指令，再用 Bash、Read 等工具执行。
+Agent 在收到相关任务时，先通过 `Skill` 工具读取技能指令，再用 Bash、Read 等工具执行。
 
 ## 运行示例
 

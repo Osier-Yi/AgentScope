@@ -19,7 +19,7 @@ from agentscope.agent import Agent
 from agentscope.credential import DashScopeCredential
 from agentscope.event import EventType
 from agentscope.message import UserMsg, TextBlock
-from agentscope.model import DashScopeChatModel
+from agentscope.model import ChatModelBase, DashScopeChatModel
 from agentscope.permission import (
     PermissionBehavior,
     PermissionContext,
@@ -107,7 +107,7 @@ class SalesSummary(ToolBase):
             message="Read-only analytics, always allowed.",
         )
 
-    async def __call__(self, group_by: str = "") -> ToolChunk:
+    async def call(self, group_by: str = "") -> ToolChunk:
         rows = []
         with open(SALES_CSV, "r", encoding="utf-8") as f:
             for row in csv.DictReader(f):
@@ -158,7 +158,7 @@ async def stream_reply(agent: Agent, content: str) -> None:
 # =========================================================================
 # Example 1: EXPLORE mode (read-only)
 # =========================================================================
-async def example_explore_mode(model) -> None:
+async def example_explore_mode(model: ChatModelBase) -> None:
     """EXPLORE mode: read-only access, all modifications denied."""
     print("\n" + "=" * 60)
     print("Example 1: EXPLORE Mode (Read-Only)")
@@ -206,7 +206,7 @@ async def example_explore_mode(model) -> None:
 # =========================================================================
 # Example 2: Permission rules
 # =========================================================================
-async def example_permission_rules(model) -> None:
+async def example_permission_rules(model: ChatModelBase) -> None:
     """Configure Allow and Deny rules for fine-grained control."""
     print("\n" + "=" * 60)
     print("Example 2: Permission Rules (Allow + Deny)")
@@ -278,12 +278,12 @@ async def example_permission_rules(model) -> None:
 # =========================================================================
 # Example 3: BYPASS mode (testing/sandbox)
 # =========================================================================
-async def example_bypass_mode(model) -> None:
-    """BYPASS mode: all operations allowed without checks."""
+async def example_bypass_mode(model: ChatModelBase) -> None:
+    """BYPASS mode: skip ASK, while keeping explicit DENY decisions."""
     print("\n" + "=" * 60)
     print("Example 3: BYPASS Mode (Testing/Sandbox)")
     print("=" * 60)
-    print("  Mode: BYPASS — all operations auto-allowed")
+    print("  Mode: BYPASS — skips ASK; explicit rules/tool DENY still apply")
     print("  WARNING: Only use in trusted environments!")
 
     agent = Agent(
@@ -312,7 +312,7 @@ async def example_bypass_mode(model) -> None:
 # =========================================================================
 # Example 4: DONT_ASK mode (unattended)
 # =========================================================================
-async def example_dont_ask_mode(model) -> None:
+async def example_dont_ask_mode(model: ChatModelBase) -> None:
     """DONT_ASK mode: converts ASK decisions to DENY."""
     print("\n" + "=" * 60)
     print("Example 4: DONT_ASK Mode (Unattended Execution)")
@@ -382,21 +382,20 @@ async def example_mode_comparison() -> None:
   ┌──────────────┬──────────┬──────────┬──────────┬────────────────┐
   │ Mode         │ Read     │ Write    │ Bash     │ Best For       │
   ├──────────────┼──────────┼──────────┼──────────┼────────────────┤
-  │ DEFAULT      │ ASK      │ ASK      │ ASK      │ Maximum safety │
-  │ ACCEPT_EDITS │ ALLOW    │ ALLOW*   │ ASK      │ Dev iteration  │
-  │ EXPLORE      │ ALLOW    │ DENY     │ DENY     │ Code browsing  │
-  │ BYPASS       │ ALLOW    │ ALLOW    │ ALLOW    │ Testing/sandbox│
+  │ DEFAULT      │ ASK*     │ ASK      │ varies   │ Interactive    │
+  │ ACCEPT_EDITS │ ALLOW    │ ALLOW*   │ varies   │ Dev iteration  │
+  │ EXPLORE      │ ALLOW    │ DENY     │ read-only│ Code browsing  │
+  │ BYPASS       │ ALLOW*   │ ALLOW*   │ ALLOW*   │ Trusted sandbox│
   │ DONT_ASK     │ ASK→DENY │ ASK→DENY │ ASK→DENY │ Scheduled jobs │
   └──────────────┴──────────┴──────────┴──────────┴────────────────┘
   * ACCEPT_EDITS allows writes only within working directories
+  * DEFAULT may accept a tool's explicit ALLOW decision
+  * BYPASS still honors deny/ask rules and a tool's explicit DENY
 
-  Decision priority:
-  1. Deny rules     (highest — always checked first)
-  2. Ask rules
-  3. Tool checks    (bypass-immune: dangerous paths, mode logic)
-  4. Allow rules
-  5. BYPASS mode
-  6. Default → ASK  (DONT_ASK converts to DENY)
+  Common start: Deny rules → Ask rules → mode-specific policy
+  EXPLORE:     read-only ALLOW, modification DENY
+  BYPASS:      tool ASK is skipped, fallback ALLOW
+  DONT_ASK:    every ASK path becomes DENY
 """,
     )
 

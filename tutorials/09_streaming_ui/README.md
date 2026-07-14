@@ -1,6 +1,6 @@
 # Tutorial 09: 流式 UI — 构建实时交互界面
 
-> **什么时候需要这个？** 你要做真正的实时交互界面（终端 TUI、Web 聊天等），需要把所有事件类型——文本增量、思考过程、工具调用、token 统计、HITL 确认——组织成一套连贯、流畅的视觉体验。
+> **什么时候需要这个？** 你要做真正的实时交互界面（终端 TUI、Web 聊天等），需要把文本、多模态数据、思考过程、工具调用、token 统计和 HITL 确认组织成一套连贯的视觉体验。
 
 ## 本章基于前序章节
 
@@ -41,10 +41,18 @@ Model 调用
 ├─ TEXT_BLOCK_DELTA      ── 文本增量（delta）
 └─ TEXT_BLOCK_END        ── 文本结束
 
+数据块
+├─ DATA_BLOCK_START      ── 图片、音频等数据开始（media_type）
+├─ DATA_BLOCK_DELTA      ── base64 数据增量
+└─ DATA_BLOCK_END        ── 数据结束
+
 思考块
 ├─ THINKING_BLOCK_START  ── 思考开始
 ├─ THINKING_BLOCK_DELTA  ── 思考增量
 └─ THINKING_BLOCK_END    ── 思考结束
+
+一次性提示
+└─ HINT_BLOCK            ── Team 消息、后台结果等完整提示
 
 工具调用
 ├─ TOOL_CALL_START       ── 开始调用（tool_call_name）
@@ -61,11 +69,15 @@ HITL 事件
 ├─ REQUIRE_USER_CONFIRM        ── 需要用户确认
 ├─ REQUIRE_EXTERNAL_EXECUTION  ── 需要外部执行
 ├─ USER_CONFIRM_RESULT         ── 用户确认结果
-└─ EXTERNAL_EXECUTION_RESULT   ── 外部执行结果
+├─ EXTERNAL_EXECUTION_RESULT   ── 外部执行结果
+└─ USER_INTERRUPT              ── 用户中止一个等待恢复的回复
 
 其他
-└─ EXCEED_MAX_ITERS    ── 超过最大迭代次数
+├─ EXCEED_MAX_ITERS    ── 超过最大迭代次数
+└─ CUSTOM              ── 服务或应用自定义的扩展事件
 ```
+
+`USER_CONFIRM_RESULT`、`EXTERNAL_EXECUTION_RESULT` 和 `USER_INTERRUPT` 通常是 UI 传回 `reply_stream()`、用于恢复或中止 parked reply 的输入事件，不一定会出现在一次普通回复的输出流里。UI 仍应认识它们，并对未知 `CUSTOM.name` 或未来新增事件做安全降级。
 
 ### Token 用量追踪
 

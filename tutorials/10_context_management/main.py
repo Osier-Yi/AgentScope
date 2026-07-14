@@ -14,8 +14,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from agentscope.agent import Agent
-from agentscope.agent._config import ContextConfig
+from agentscope.agent import Agent, ContextConfig
 from agentscope.credential import DashScopeCredential
 from agentscope.event import EventType
 from agentscope.message import UserMsg, TextBlock
@@ -102,7 +101,7 @@ class LargeResultTool(ToolBase):
             message="Read-only, always allowed.",
         )
 
-    async def __call__(self, max_rows: int = 100) -> ToolChunk:
+    async def call(self, max_rows: int = 100) -> ToolChunk:
         rows = []
         with open(SALES_CSV, "r", encoding="utf-8") as f:
             for row in csv.DictReader(f):
@@ -320,7 +319,9 @@ async def example_compression_flow() -> None:
   Manual Compression:
   ──────────────────
   await agent.compress_context()                    # default config
-  await agent.compress_context(custom_config)       # custom config
+  await agent.compress_context(context_config=custom_config)
+  await agent.compress_context(instructions=hint_block)
+      # hint_block tells the summarizer what must be preserved
 """,
     )
 

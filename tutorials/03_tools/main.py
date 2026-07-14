@@ -51,7 +51,7 @@ def query_sales(
     region: str = "",
     min_total: float = 0.0,
     limit: int = 10,
-) -> ToolChunk:
+) -> str:
     """Query and filter the sales dataset.
 
     Args:
@@ -76,9 +76,7 @@ def query_sales(
                 break
 
     if not rows:
-        return ToolChunk(
-            content=[TextBlock(text="No matching records found.")],
-        )
+        return "No matching records found."
 
     header = " | ".join(rows[0].keys())
     separator = "-" * len(header)
@@ -86,11 +84,7 @@ def query_sales(
     for row in rows:
         lines.append(" | ".join(row.values()))
 
-    return ToolChunk(
-        content=[
-            TextBlock(text=f"Found {len(rows)} records:\n" + "\n".join(lines)),
-        ],
-    )
+    return f"Found {len(rows)} records:\n" + "\n".join(lines)
 
 
 class SalesSummary(ToolBase):
@@ -127,7 +121,7 @@ class SalesSummary(ToolBase):
             message="Read-only analytics tool, always allowed.",
         )
 
-    async def __call__(self, group_by: str = "") -> ToolChunk:
+    async def call(self, group_by: str = "") -> ToolChunk:
         rows = []
         with open(SALES_CSV, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)

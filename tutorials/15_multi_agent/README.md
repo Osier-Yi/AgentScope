@@ -1,6 +1,6 @@
 # Tutorial 15: Multi-Agent — 多 Agent 协作
 
-> **什么时候需要这个？** 单 Agent 的工具太多导致上下文撑爆、LLM 选错工具，或者任务可以清晰拆成几个角色（采集 / 分析 / 写报告）。多 Agent 协作让每个 Agent 只关心自己那一摊，用 Python 代码做编排。
+> **什么时候需要这个？** 单 Agent 的工具太多导致上下文撑爆、LLM 选错工具，或者任务可以清晰拆成几个角色（采集 / 分析 / 写报告）。多 Agent 协作让每个 Agent 只关心自己那一摊；库模式下用 Python 编排，服务模式下也可以交给 Team tools 编排。
 
 ## 本章基于前序章节
 
@@ -14,7 +14,7 @@
 - `observe()` 方法：无推理的消息注入
 - 多 Agent 编排模式：串行、并行、动态路由
 - Agent 间的消息传递和结果接力
-- 编排逻辑的实现方式
+- Python 编排与 Agent Service Team tools 的边界
 
 ## 前置要求
 
@@ -33,9 +33,18 @@
 
 多 Agent 的解决方案：每个 Agent 专注一个职责，通过编排逻辑协作。
 
+但“任务有多个步骤”本身不是拆分理由。默认先用一个 Agent 加清晰工具完成任务；只有至少出现下面一种情况时，再考虑 Multi-Agent：
+
+- 不同角色需要明显不同的工具、权限或系统提示
+- 某些子任务可以并行，且并行收益足以覆盖通信成本
+- 单 Agent 的工具 Schema 或上下文已经过大，影响选择和推理稳定性
+- 业务上需要独立的责任边界，例如采集结果必须交给另一个角色审核
+
+如果多个角色只是顺序复述同一份上下文，拆分通常只会增加模型调用、延迟和调试难度。
+
 ### AgentScope 的多 Agent 设计
 
-AgentScope 2.0 不提供内置的"编排框架"——它提供**消息传递原语**，让你用 Python 代码实现编排：
+AgentScope 2.0 的库模式不强制你使用某个"编排框架"——它提供**消息传递原语**，让你用 Python 代码实现编排：
 
 ```python
 # Agent 之间通过消息传递协作
@@ -52,6 +61,15 @@ final = await agent_b.reply(follow_up_msg)    # B 基于上下文推理
 | `observe(msg)` | 接收消息 → 仅存入上下文 | 提供背景信息，不触发推理 |
 
 `observe()` 是多 Agent 协作的关键：它让 Agent 获得上下文信息，而不需要立即响应。
+
+### 库模式 vs 服务模式
+
+| 模式 | 核心机制 | 什么时候用 |
+|------|----------|------------|
+| Python 编排 | `reply()` / `observe()` / `asyncio.gather()` | 单脚本、Notebook、你希望业务代码明确控制流程 |
+| Agent Service Team | `TeamCreate` / `AgentCreate` / `AgentInvite` / `TeamSay` | 多用户服务、需要 leader agent 动态创建或邀请 worker |
+
+本章主线仍然使用 Python 编排，因为它最透明，方便学生看清 Agent 之间怎么传递上下文。T13 的 Agent Service 已经内置 Team tools；如果你把多 Agent 放到服务端，leader session 会拿到 `TeamCreate`、`AgentCreate`、`TeamSay` 等工具，worker 通过 `TeamSay` 汇报结果。
 
 ### 三种编排模式
 
@@ -112,18 +130,18 @@ elif route == "complex":
 
 ## 示例：DataMuse 团队
 
-本期创建三个角色的 DataMuse 团队：
+本期把 DataMuse 展开为一个**可选的团队化形态**，创建三个角色：
 
-1. **DataCollector** — 数据采集员，配备 Read、Glob、query_sales 工具
-2. **DataAnalyst** — 数据分析师，配备 SalesSummary 和 Bash 工具
-3. **ReportWriter** — 报告撰写员，配备 Bash 工具（用于写文件）
+1. **DataMuse_Collector** — 数据采集员，配备 Read、Glob、query_sales 工具
+2. **DataMuse_Analyst** — 数据分析师，配备 SalesSummary 和 Bash 工具
+3. **DataMuse_Writer** — 报告撰写员，配备 Bash 工具（用于写文件）
 
 编排流程：用户提出分析需求 → Collector 采集 → Analyst 分析 → Writer 出报告
 
 ## 运行示例
 
 ```bash
-cd tutorials/14_multi_agent
+cd tutorials/15_multi_agent
 python main.py
 ```
 
@@ -133,14 +151,8 @@ python main.py
 - 添加动态路由：根据用户请求复杂度选择不同的处理流程
 - 创建一个"审核员" Agent，检查报告质量并决定是否需要重新分析
 - 用 Middleware 实现 Agent 间通信的日志追踪
+- 在 Agent Service 中用 `TeamCreate` + `AgentCreate` 复刻本章流水线
 
-## 系列总结
+## 下一期预告
 
-恭喜完成全部 16 期教程！你已经掌握了 AgentScope 2.0 的核心能力：
-
-| Phase | 内容 |
-|-------|------|
-| 基础篇 (01-03) | Agent 基础、消息/事件、工具系统 |
-| 进阶篇 (04-10) | 工具组、MCP、Skill、权限、人机协作、流式 UI、上下文管理 |
-| 工程篇 (11-14) | 中间件、Workspace、服务部署、定时任务 |
-| 高级篇 (15-16) | 多 Agent 协作、完整 DataMuse |
+**Tutorial 16: Complete DataMuse** — 回到一个自包含应用，把核心模块组装成可运行的命令行和轻量 Web 版本。T15 的团队化方案是扩展路径，不是 T16 的必选依赖。

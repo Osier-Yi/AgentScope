@@ -6,7 +6,7 @@
 
 - **T07 — `PermissionMode.DONT_ASK`**：无人值守时把 ASK 自动转为 DENY，必须靠 Allow 规则提前授权。
 - **T10 — Context 压缩**：Stateful 定时任务会持续累积上下文，必须配套压缩策略。
-- **T13 — `create_app()` / Session**：本章的 `/schedule` 路由跑在 T13 启动的 Agent Service 上。
+- **T13 — `create_app()` / Session / DataMuse 工具**：本章的 `/schedule` 路由跑在 T13 启动的 Agent Service 上，并复用服务端注入的 `SalesProfile` / `SalesBreakdown`。
 
 ## 你将学到
 
@@ -14,13 +14,14 @@
 - Cron 表达式驱动的定时任务
 - Stateful vs Stateless 模式
 - 定时任务的权限模式
+- 定时任务触发后如何查看 Session 和运行状态
 - 通过 API 管理定时任务
 
 ## 前置要求
 
 - 完成 Tutorial 13
 - Agent Service 正常运行
-- `pip install "agentscope[service,storage]"`
+- `pip install "agentscope[service]" fakeredis httpx`
 
 ## 核心概念
 
@@ -44,6 +45,14 @@ GET    /schedule/{id}/sessions ── 查看任务触发的会话
 DELETE /schedule/{id}   ── 删除定时任务
 ```
 
+Schedule 只负责"按时间触发 Agent"；触发后真正执行的是一个 Session。要看运行状态或事件流，继续使用 T13 的 Session API：
+
+```
+GET /sessions/{session_id}/status?agent_id=...
+GET /sessions/{session_id}/stream?agent_id=...
+GET /sessions/{session_id}/messages?agent_id=...
+```
+
 ### 创建定时任务
 
 ```bash
@@ -53,7 +62,7 @@ curl -X POST http://localhost:8000/schedule \
   -d '{
     "agent_id": "<agent-id>",
     "name": "Daily Sales Report",
-    "description": "Generate daily sales summary",
+    "description": "Use SalesProfile and SalesBreakdown by category, then generate a 5-bullet sales summary.",
     "cron_expression": "0 9 * * *",
     "timezone": "Asia/Shanghai",
     "chat_model_config": {
@@ -117,7 +126,7 @@ curl -X POST http://localhost:8000/schedule \
 
 - 用户不在场，无法回答确认提示
 - ASK 决策自动转为 DENY，防止阻塞
-- 必须通过 Allow 规则预先授权必要的操作
+- 必要操作必须由工具自身明确返回 ALLOW，或通过 Allow 规则预先授权
 
 ```python
 # 定时任务的推荐配置
@@ -142,8 +151,8 @@ Agent：已创建定时任务 "Daily Report"，每天 9:00 自动执行。
 
 本期展示如何通过 API 创建和管理定时任务，包括：
 
-1. 创建 Stateless 定时任务（每次独立执行）
-2. 创建 Stateful 定时任务（保留历史上下文）
+1. 创建 Stateless 定时任务，每次调用 T13 的只读销售工具独立生成摘要
+2. 创建 Stateful 定时任务，在保留历史上下文的同时重新查询销售数据
 3. 查看和管理定时任务
 
 ## 运行示例
@@ -174,7 +183,7 @@ cd tutorials/14_scheduling && python main.py
 - 实现一个监控类定时任务：定期检查文件变化
 - 通过 API 动态启用/停用定时任务
 
-> 无人值守跑久了，模型限流或临时挂掉是必发生的事——给 Agent 配上 `ModelConfig(max_retries=..., fallback_model=...)` 自动兜底，详见 **[T13 → 模型 fallback 与自动重试](../13_agent_service/README.md#模型-fallback-与自动重试)**。
+> 无人值守跑久了，模型限流或临时挂掉是必发生的事。Schedule 创建时至少要选一个稳定的 `chat_model_config`；如果是普通 Session，可以按 T13 的方式额外配置 `fallback_chat_model_config`。详见 **[T13 → 模型 fallback 与自动重试](../13_agent_service/README.md#模型-fallback-与自动重试)**。
 
 ## 下一期预告
 

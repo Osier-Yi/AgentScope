@@ -1,8 +1,8 @@
 # Tutorial 16: Complete DataMuse — 最终整合
 
-本章把前面分散学习的模块合成一个可运行的 DataMuse：它会读取同一份销售数据，做数据概览和维度拆解，在写入报告前触发确认事件，并把最终 Markdown 报告保存到本地 workspace 中。
+本章把 T01-T12 中适合放进单体应用的核心模块合成一个可运行的 DataMuse：它会读取同一份销售数据，做数据概览和维度拆解，在写入报告前触发确认事件，并把最终 Markdown 报告保存到本地 workspace 中。
 
-> **什么时候需要这个？** 你已经分别学完前面所有模块，想看一个端到端、最小但完整的应用，是怎么把它们串成一个真正能跑的 Data Agent——既能在命令行里跑流程，也能在浏览器里跑流式对话。
+> **什么时候需要这个？** 你学完本地 Agent 的核心模块后，想看一个端到端、最小但完整的应用如何组装出来——既能在命令行里跑流程，也能在浏览器里跑流式对话。
 
 ## 本章基于前序章节
 
@@ -16,6 +16,8 @@
 - **T11 — Middleware**：`TimingMiddleware` 记录每轮耗时
 - **T12 — `LocalWorkspace`**：作为报告的落地空间和 Offloader
 
+T13-T15 是同一业务案例的另外两条扩展路径，不是本章必须嵌入的运行时：T13-T14 把 DataMuse 变成多用户服务和定时任务，T15 在确有必要时把单 Agent 展开成团队。本章选择保留一个容易读、容易跑的自包含应用。
+
 ## 你将学到
 
 - 如何把自定义分析工具组织成一个完整 Data Agent
@@ -26,7 +28,8 @@
 
 ## 前置要求
 
-- 完成 Tutorial 01-15
+- 建议完成 Tutorial 01-12
+- T13-T15 可选：用于理解服务化、调度和团队化扩展
 - Python 3.12
 - 安装 AgentScope：`pip install agentscope`
 - 准备好 `tutorials/data/sales_data.csv`
@@ -39,7 +42,7 @@
 最快的方式，直接在终端跑完整流程：
 
 ```bash
-cd tutorials/15_complete_datamuse
+cd tutorials/16_complete_datamuse
 python main.py
 ```
 
@@ -56,7 +59,7 @@ python main.py
 用浏览器交互，体验流式输出 + 权限确认弹窗。无需 Redis 或 Node.js：
 
 ```bash
-cd tutorials/15_complete_datamuse
+cd tutorials/16_complete_datamuse
 pip install uvicorn fastapi
 python serve.py
 ```
@@ -99,6 +102,8 @@ Web UI 会实时展示：
 ## 技术实现
 
 ### serve.py 做了什么
+
+这里的 `/chat` 是本章轻量 Web UI 自己定义的端点；如果使用 T13 的 Agent Service，事件流入口是 `/sessions/{id}/stream`。
 
 ```python
 # 1. 复用 main.py 的自定义工具 (SalesProfile, SalesBreakdown, ReportWriter)
@@ -145,10 +150,20 @@ async def chat(req: ChatRequest):
 | Middleware | `TimingMiddleware` 记录每轮耗时 |
 | Workspace | `LocalWorkspace` 保存报告并支持 offload |
 
+### 哪些能力没有硬塞进本章
+
+| 能力 | 本章选择 | 对应章节 |
+|---|---|---|
+| MCP / Skill | 分析工具已经是本地 Python Tool，不额外增加远程依赖或操作手册 | T05-T06 |
+| Agent Service / Schedule | 保持单用户、单进程示例，服务化版本单独运行 | T13-T14 |
+| Multi-Agent | 当前任务一个 Agent 足够，避免不必要的角色通信 | T15 |
+
+“完整”在这里指业务闭环完整：有输入、分析、权限边界、过程反馈和落地产物；不表示一个进程必须同时启用 AgentScope 的每一项能力。
+
 ## 文件结构
 
 ```
-15_complete_datamuse/
+16_complete_datamuse/
 ├── README.md         ← 你在读的文档
 ├── main.py           ← 模式 A：命令行 Demo
 ├── serve.py          ← 模式 B：FastAPI + SSE 服务
@@ -159,7 +174,7 @@ async def chat(req: ChatRequest):
 
 ## 为什么这是最终章
 
-前面的章节分别讲概念和 API，本章回答"学完以后能不能搭出一个 Data Agent"。它不是新的抽象，而是把 DataMuse 收束成一个能跑的最小完整应用：有数据输入、有分析工具、有权限边界、有运行过程、有最终产物。
+前面的章节分别讲概念和 API，本章回答"学完以后能不能搭出一个 Data Agent"。它不是新的抽象，也不是把每种架构堆到一起，而是把 DataMuse 收束成一个能跑的最小完整应用：有数据输入、有分析工具、有权限边界、有运行过程、有最终产物。
 
 - **模式 A** 展示所有核心模块如何在一个脚本里协作
 - **模式 B** 展示如何用最少代码（一个 serve.py + 一个 HTML）把 Agent 暴露为 Web 应用

@@ -253,18 +253,15 @@ async def example_architecture() -> None:
   │    add_skill(path) / remove_skill(name)                  │
   └─────────────────────────────────────────────────────────┘
 
-  Three Implementations
-  ─────────────────────
+  Workspace Implementations
+  ─────────────────────────
 
-  LocalWorkspace          DockerWorkspace        E2BWorkspace
-  ┌──────────────┐       ┌──────────────┐       ┌──────────────┐
-  │ ./workspace/ │       │ Docker       │       │ E2B Cloud    │
-  │ ├── .mcp     │       │ Container    │       │ Sandbox      │
-  │ ├── data/    │       │              │       │              │
-  │ ├── skills/  │       │ tools run    │       │ tools run    │
-  │ └── sessions/│       │ in container │       │ in sandbox   │
-  └──────────────┘       └──────────────┘       └──────────────┘
-  本地目录                 容器隔离                云端隔离
+  LocalWorkspace       DockerWorkspace      E2BWorkspace        K8sWorkspace
+  ┌─────────────┐      ┌─────────────┐      ┌─────────────┐    ┌──────────┐
+  │ ./workspace │      │ Docker      │      │ E2B Cloud   │    │ Pod/PVC  │
+  │ local files │      │ container   │      │ sandbox     │    │ cluster  │
+  └─────────────┘      └─────────────┘      └─────────────┘    └──────────┘
+  本地目录              容器隔离              云端隔离            K8s 隔离
 
   Workspace in Agent Construction
   ────────────────────────────────
@@ -288,6 +285,11 @@ async def example_architecture() -> None:
   ──────────────────────────────────────────
 
   # WorkspaceManager creates per-session workspaces
+  from agentscope.app import create_app
+  from agentscope.app.message_bus import InMemoryMessageBus
+  from agentscope.app.storage import RedisStorage
+  from agentscope.app.workspace_manager import LocalWorkspaceManager
+
   manager = LocalWorkspaceManager(
       basedir="./workspaces",
       default_mcps=[...],
@@ -296,6 +298,7 @@ async def example_architecture() -> None:
 
   app = create_app(
       storage=RedisStorage(...),
+      message_bus=InMemoryMessageBus(),
       workspace_manager=manager,
   )
 """,

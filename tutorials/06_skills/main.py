@@ -4,7 +4,7 @@
 This tutorial demonstrates:
 - Creating SKILL.md files with frontmatter metadata
 - Loading skills with LocalSkillLoader
-- How SkillViewer auto-registers as a tool
+- How the Skill tool is exposed when skills are available
 - Combining skills with ToolGroups
 - Agent reading and following skill instructions
 """
@@ -215,9 +215,9 @@ async def example_skill_anatomy() -> None:
   How it works:
   ─────────────
   1. SKILL.md frontmatter → name + description (shown in system prompt)
-  2. SKILL.md body → full instructions (loaded on demand via SkillViewer)
+  2. SKILL.md body → full instructions (loaded on demand via Skill)
   3. Agent sees skill list → decides which skill to use
-  4. Agent calls SkillViewer("chart_generator") → gets full instructions
+  4. Agent calls Skill(skill="chart_generator") → gets full instructions
   5. Agent follows instructions using Bash, Read, Write tools
 """,
     )

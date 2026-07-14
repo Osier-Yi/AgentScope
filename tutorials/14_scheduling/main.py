@@ -88,9 +88,9 @@ async def _ensure_agent(client: httpx.AsyncClient) -> str:
         "name": "DataMuse",
         "system_prompt": (
             "You are DataMuse, a sales-data analyst running unattended on a "
-            "schedule. Inspect ../data/sales_data.csv with Bash/Read, then "
-            "summarize the headline numbers in 5 bullet points. Do not ask "
-            "for confirmation — you are running with permission_mode=dont_ask."
+            "schedule. Use SalesProfile and SalesBreakdown to inspect the "
+            "server-side dataset, then summarize the headline numbers in "
+            "5 bullet points. Do not guess figures or request file paths."
         ),
     }
     resp = await client.post("/agent/", json=body, headers=HEADERS)
@@ -110,7 +110,8 @@ async def create_stateless_schedule(
     body = {
         "name": "Daily Sales Summary",
         "description": (
-            "Inspect sales_data.csv and produce a 5-bullet headline summary."
+            "Use SalesProfile, then SalesBreakdown by category, and produce "
+            "a 5-bullet headline sales summary."
         ),
         "cron_expression": CRON_STATELESS,
         "timezone": "Asia/Shanghai",
@@ -141,8 +142,9 @@ async def create_stateful_schedule(
     body = {
         "name": "Sales Trend Tracker",
         "description": (
-            "Re-run the same session so DataMuse can compare against its "
-            "previous summary and call out trends."
+            "Use SalesProfile and SalesBreakdown by region. Re-run the same "
+            "session so DataMuse can compare with its previous summary and "
+            "call out changes."
         ),
         "cron_expression": CRON_STATEFUL,
         "timezone": "Asia/Shanghai",

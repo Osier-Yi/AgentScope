@@ -104,7 +104,7 @@ class SalesSummary(ToolBase):
             message="Read-only analytics, always allowed.",
         )
 
-    async def __call__(self, group_by: str = "") -> ToolChunk:
+    async def call(self, group_by: str = "") -> ToolChunk:
         rows = []
         with open(SALES_CSV, "r", encoding="utf-8") as f:
             for row in csv.DictReader(f):
@@ -147,6 +147,7 @@ async def streaming_ui(agent: Agent, content: str) -> dict:
         "model_calls": 0,
         "tool_calls": 0,
         "text_blocks": 0,
+        "data_blocks": 0,
         "thinking_blocks": 0,
         "events": 0,
     }
@@ -200,6 +201,21 @@ async def streaming_ui(agent: Agent, content: str) -> dict:
             case EventType.TEXT_BLOCK_END:
                 pass
 
+            # --- Data blocks (image/audio/file payloads) ---
+            case EventType.DATA_BLOCK_START:
+                stats["data_blocks"] += 1
+                print(
+                    f"\n  [data] receiving {event.media_type}",
+                    end="",
+                    flush=True,
+                )
+
+            case EventType.DATA_BLOCK_DELTA:
+                pass  # do not print base64 payloads in a terminal UI
+
+            case EventType.DATA_BLOCK_END:
+                print(" [received]", end="", flush=True)
+
             # --- Thinking blocks ---
             case EventType.THINKING_BLOCK_START:
                 stats["thinking_blocks"] += 1
@@ -214,6 +230,17 @@ async def streaming_ui(agent: Agent, content: str) -> dict:
 
             case EventType.THINKING_BLOCK_END:
                 print()
+
+            # --- One-shot context hint ---
+            case EventType.HINT_BLOCK:
+                hint = str(event.hint).replace("\n", " ")
+                if len(hint) > 80:
+                    hint = hint[:80] + "..."
+                print(
+                    f"\n  [hint from {event.source or 'system'}] {hint}",
+                    end="",
+                    flush=True,
+                )
 
             # --- Tool calls ---
             case EventType.TOOL_CALL_START:
@@ -237,6 +264,9 @@ async def streaming_ui(agent: Agent, content: str) -> dict:
             case EventType.TOOL_RESULT_TEXT_DELTA:
                 pass  # suppress verbose tool output
 
+            case EventType.TOOL_RESULT_DATA_DELTA:
+                pass  # a graphical UI could render event.data or event.url
+
             case EventType.TOOL_RESULT_END:
                 state_icon = "ok" if event.state == "success" else event.state
                 print(f" [{state_icon}]", end="", flush=True)
@@ -254,9 +284,31 @@ async def streaming_ui(agent: Agent, content: str) -> dict:
                     f"{len(event.tool_calls)} tool(s)",
                 )
 
+            # These events are normally passed back into reply_stream() to
+            # resume a parked reply, rather than emitted by a normal run.
+            case EventType.USER_CONFIRM_RESULT:
+                print("\n  [resume] User confirmation received")
+
+            case EventType.EXTERNAL_EXECUTION_RESULT:
+                print("\n  [resume] External execution result received")
+
+            case EventType.USER_INTERRUPT:
+                print("\n  [interrupt] User stopped the parked reply")
+
+            # --- Service/application extension event ---
+            case EventType.CUSTOM:
+                print(
+                    f"\n  [custom:{event.name}] {event.value}",
+                    end="",
+                    flush=True,
+                )
+
             # --- Max iterations ---
             case EventType.EXCEED_MAX_ITERS:
                 print("\n  [warn] Max iterations exceeded!")
+
+            case _:
+                print(f"\n  [event] {event.type}", end="", flush=True)
 
     # Print summary
     print(f"\n{'─' * 50}")
@@ -272,6 +324,7 @@ async def streaming_ui(agent: Agent, content: str) -> dict:
     )
     print(
         f"    Text blocks: {stats['text_blocks']} | "
+        f"Data blocks: {stats['data_blocks']} | "
         f"Thinking blocks: {stats['thinking_blocks']}",
     )
     print(f"    Total events: {stats['events']}")

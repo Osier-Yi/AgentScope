@@ -24,12 +24,13 @@
 
 ### Toolkit 架构
 
-`Toolkit` 是 Agent 工具能力的**总入口**，负责：
+`Toolkit` 是 Agent 工具能力的**注册表和发现入口**，负责：
 
 - **注册**：接受 `ToolBase` 实例、MCP 客户端、Skill 加载器，全部并入同一个工具池
-- **Schema 管理**：自动生成 JSON Schema（即 `get_tool_schemas()`）提供给 LLM
-- **调度执行**：接收 ToolCallBlock，做 schema 校验 + 权限检查 + 分发到对应工具
-- **并发管理**：根据工具的 `is_concurrency_safe` 标记自动并行/串行执行
+- **发现**：根据当前激活的工具组，通过 `get_tool_schemas()` 把可用工具的 JSON Schema 提供给 LLM
+- **定位与调用**：按工具名找到对应实现，并把调用结果统一为 Agent 可消费的工具结果
+
+Schema 校验、权限判定，以及根据 `is_concurrency_safe` 决定并行或串行执行，发生在 Agent 的 acting 流程里。也就是说，Toolkit 管“有哪些工具、当前能看见哪些、具体调用谁”，Agent 管“一次 ReAct 迭代里如何安全地执行这些调用”。
 
 创建 Toolkit 时可以传入 4 类来源，每一类都对应后续的一章：
 
@@ -46,7 +47,7 @@ toolkit = Toolkit(
 
 不传 `tool_groups` 时，前三类工具会被自动收进一个名为 `"basic"` 的默认组。
 
-> **两个隐藏工具**：构造完成后，Toolkit 会自动注册 `ResetTools`（agent 自己切换工具组的元工具，配合 T04 使用）和 `SkillViewer`（查看 Skill 详情，配合 T06）。后面调试时如果在 `get_tool_schemas()` 输出里看到这俩名字"凭空出现"，那是设计预期，不是 bug。
+> **条件出现的内置元工具**：当存在非 `basic` 工具组时，Schema 中会出现 `reset_tools`，用于切换工具组；当当前可用组中存在 Skill 时，会出现 `Skill`，用于按名称读取完整 Skill 指令。它们不是每个 Toolkit 都固定拥有的两个工具，具体条件分别在 T04、T06 展开。
 
 ### 内置工具
 
@@ -68,10 +69,9 @@ AgentScope 2.0 提供了一组开箱即用的工具：
 最快的方式是用 `FunctionTool` 包装一个普通 Python 函数：
 
 ```python
-from agentscope.message import TextBlock
-from agentscope.tool import FunctionTool, ToolChunk
+from agentscope.tool import FunctionTool
 
-def query_sales(category: str, min_total: float = 0.0) -> ToolChunk:
+def query_sales(category: str, min_total: float = 0.0) -> str:
     """Query sales data by category and minimum total.
 
     Args:
@@ -79,15 +79,17 @@ def query_sales(category: str, min_total: float = 0.0) -> ToolChunk:
         min_total: Minimum order total to include.
     """
     # ... implementation
-    return ToolChunk(content=[TextBlock(text=result_string)])
+    return result_string
 
-tool = FunctionTool(query_sales)
+tool = FunctionTool(query_sales, is_read_only=True)
 ```
 
 `FunctionTool` 自动从函数签名和 docstring 提取：
 - `name` ← 函数名
 - `description` ← docstring 摘要
 - `input_schema` ← 参数类型注解和 Args 描述
+
+普通函数可以直接返回 `str` / `dict` / list，`FunctionTool` 会自动转换为 Agent 能消费的 `ToolChunk`。只有需要流式输出、多模态结果或精细状态时，才手动返回 `ToolChunk`。
 
 ### 自定义 ToolBase
 
@@ -108,10 +110,12 @@ class MyTool(ToolBase):
     async def check_permissions(self, tool_input, context):
         return PermissionDecision(behavior=PermissionBehavior.ALLOW)
 
-    async def __call__(self, **kwargs):
+    async def call(self, **kwargs):
         result = do_something(**kwargs)
         return ToolChunk(content=[TextBlock(text=str(result))])
 ```
+
+自定义工具推荐覆写 `call()`。`ToolBase.__call__()` 由框架保留，用来包住 tool-level middleware；直接覆写 `__call__()` 会绕过这层包装。
 
 ### 工具执行流程
 
@@ -124,7 +128,7 @@ Schema 验证（jsonschema.validate）
   ↓ DENY → 返回拒绝信息给 LLM
   ↓ ASK  → 暂停等待用户确认
   ↓ ALLOW → 继续执行
-工具执行（__call__）
+工具执行（ToolBase.__call__ → tool middleware → call）
   ↓
 结果返回到 Agent 上下文
   ↓
@@ -148,7 +152,7 @@ python main.py
 ## 进一步探索
 
 - 尝试给 `FunctionTool` 添加 `is_read_only=True` 参数观察权限行为变化
-- 自定义一个支持流式输出的工具（`async def __call__` 返回 `AsyncGenerator`）
+- 自定义一个支持流式输出的工具（`async def call` 返回 `AsyncGenerator`）
 - 观察并发安全工具和非并发安全工具在多工具调用时的执行差异
 
 ## 下一期预告
